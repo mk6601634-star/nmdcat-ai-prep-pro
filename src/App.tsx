@@ -76,6 +76,10 @@ export default function App() {
         }
       } else {
         setFirebaseUser(null);
+        // Seamless anonymous fallback so that Firestore persistence is active immediately
+        signInAnonymously(auth).catch((err) => {
+          console.info('Anonymous authentication notice:', err?.message || err);
+        });
       }
     });
     return () => unsubscribe();

@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.js";
@@ -16,6 +15,26 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Normalize URL paths for Vercel Serverless Function proxy routing
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/_')) {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
+// Health check endpoint
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    aiGateway: {
+      geminiKeyConfigured: !!process.env.GEMINI_API_KEY,
+      fallbackKeyConfigured: !!(process.env.FALLBACK_API_KEY || process.env.GROQ_API_KEY)
+    }
+  });
+});
 
 // API Endpoint: Parse PDF File to Plain Text
 app.post("/api/parse-pdf", async (req, res) => {
@@ -1715,6 +1734,8 @@ Do not include any text outside the JSON object. Do not include markdown formatt
 // Vite Integration for Dev / Production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    // @ts-ignore
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
