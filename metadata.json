@@ -1,0 +1,6 @@
+{
+  "name": "NMDCAT Prep Pro 2026",
+  "description": "Comprehensive NMDCAT preparation platform with PMDC syllabus tracking, full mock exams, AI tutor, mistake vault, aggregate calculator, and flashcards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

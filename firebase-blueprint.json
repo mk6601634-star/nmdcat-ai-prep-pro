@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "users": {
+      "title": "users",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "examDate": { "type": "string" },
+        "targetCollege": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid"]
+    },
+    "topics": {
+      "title": "topics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "subject": { "type": "string" },
+        "unit": { "type": "string" },
+        "topic": { "type": "string" },
+        "status": { "type": "string" },
+        "masteryPercentage": { "type": "number" },
+        "lastStudiedDate": { "type": "string" }
+      },
+      "required": ["id", "userId"]
+    },
+    "examAttempts": {
+      "title": "examAttempts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "title": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "percentage": { "type": "number" },
+        "timeSpentSeconds": { "type": "number" }
+      },
+      "required": ["id", "userId"]
+    },
+    "savedMistakes": {
+      "title": "savedMistakes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "questionId": { "type": "string" },
+        "wrongAnswerIndex": { "type": "number" },
+        "dateAdded": { "type": "string" },
+        "isResolved": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "errorPattern": { "type": "string" }
+      },
+      "required": ["id", "userId", "questionId"]
+    },
+    "dailyTargets": {
+      "title": "dailyTargets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "dueDate": { "type": "string" }
+      },
+      "required": ["id", "userId"]
+    },
+    "userNotes": {
+      "title": "userNotes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "chapter": { "type": "string" },
+        "content": { "type": "string" },
+        "lastModified": { "type": "string" }
+      },
+      "required": ["id", "userId"]
+    }
+  }
+}

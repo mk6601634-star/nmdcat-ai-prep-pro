@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isUserCreate() {
+      return isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+
+    function isUserRead() {
+      return isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    function isUserUpdate() {
+      return isAuthenticated() &&
+             resource.data.userId == request.auth.uid &&
+             request.resource.data.userId == request.auth.uid;
+    }
+
+    function isUserDelete() {
+      return isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    function isAdminUser() {
+      return isAuthenticated() && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status == 'Active';
+    }
+
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /topics/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /examAttempts/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /savedMistakes/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /dailyTargets/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userNotes/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /customMCQs/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userFlashcards/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userMindMaps/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userMnemonics/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userFormulas/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userReactions/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userDefinitions/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /aiQuizzes/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /userPrismSessions/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
+    match /adminUsers/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdminUser());
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == uid && request.resource.data.status == 'Active') || isAdminUser()
+      );
+      allow update, delete: if isAuthenticated() && isAdminUser();
+    }
+
+    match /{adminCollection=mcqs|notes|flashcards|formulas|reactions|mindMaps|mnemonics|vocab|auditLogs|reviewQueue|contentVersions|syllabusMappings|backups}/{docId} {
+      allow read: if isAuthenticated() && (
+        isAdminUser() ||
+        (resource != null && resource.data.status == 'PUBLISHED')
+      );
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+  }
+}
