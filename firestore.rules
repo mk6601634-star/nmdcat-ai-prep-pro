@@ -138,12 +138,69 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() && isAdminUser();
     }
 
-    match /{adminCollection=mcqs|notes|flashcards|formulas|reactions|mindMaps|mnemonics|vocab|auditLogs|reviewQueue|contentVersions|syllabusMappings|backups}/{docId} {
-      allow read: if isAuthenticated() && (
-        isAdminUser() ||
-        (resource != null && resource.data.status == 'PUBLISHED')
-      );
+    match /mcqs/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
       allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /notes/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /flashcards/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /formulas/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /reactions/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /mindMaps/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /mnemonics/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /vocab/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /auditLogs/{docId} {
+      allow read, write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /reviewQueue/{docId} {
+      allow read, write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /contentVersions/{docId} {
+      allow read, write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /syllabusMappings/{docId} {
+      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'ACTIVE' || resource.data.isPublic == true);
+      allow write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /backups/{docId} {
+      allow read, write: if isAuthenticated() && isAdminUser();
+    }
+
+    match /importJobs/{docId} {
+      allow read, write: if isAuthenticated() && isAdminUser();
     }
   }
 }

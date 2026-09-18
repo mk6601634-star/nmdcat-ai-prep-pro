@@ -1,12 +1,11 @@
 {
-  "projectId": "directed-spirit-9ds98",
-  "appId": "1:25759665620:web:640c383f53995e2a47da41",
-  "apiKey": "AIzaSyCKKBUUj5Ug_EAeTxLFswa2NrrRuwRW9N0",
-  "authDomain": "directed-spirit-9ds98.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-nmdcatpreppro202-d09825a3-c9ca-4d98-9ba7-e45d01987c81",
-  "storageBucket": "directed-spirit-9ds98.firebasestorage.app",
-  "messagingSenderId": "25759665620",
-  "measurementId": "",
-  "oAuthClientId": "25759665620-4lo8d87c8o8dpup5e7oqmnlp5vlo2lp5.apps.googleusercontent.com",
+  "projectId": "nmdcat-prep-pro",
+  "appId": "1:339333451789:web:71885ecb48b0c179ba0544",
+  "apiKey": "AIzaSyBv2XUZS-idpYic_47zXCRbrBNhAUNoGQo",
+  "authDomain": "nmdcat-prep-pro.firebaseapp.com",
+  "storageBucket": "nmdcat-prep-pro.firebasestorage.app",
+  "messagingSenderId": "339333451789",
+  "measurementId": "G-42HB7MPES0",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

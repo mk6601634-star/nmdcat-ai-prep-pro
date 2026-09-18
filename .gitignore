@@ -11,4 +11,8 @@ coverage/
 service-account*.json
 firebase-admin*.json
 credential*.json
+*-firebase-adminsdk-*.json
+*.key.json
+.migration-checkpoint.json
+scripts/test_*.mjs
 
