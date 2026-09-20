@@ -109,8 +109,11 @@ export function extractJsonFromText(text: string): any {
 // GEMINI PRIMARY PROVIDER (@google/genai SDK)
 // ============================================================
 export async function callGemini(options: AiGenerateOptions): Promise<AiGenerateResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+  const apiKey = (process.env.GEMINI_API_KEY || "").trim();
+  let model = (process.env.GEMINI_MODEL || "gemini-3.6-flash").trim();
+  if (model === "gemini-2.5-flash" || model === "models/gemini-2.5-flash") {
+    model = "gemini-3.6-flash";
+  }
 
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY environment variable is not configured.");
@@ -175,10 +178,10 @@ export async function callGemini(options: AiGenerateOptions): Promise<AiGenerate
 // GROQ FALLBACK PROVIDER (OpenAI-Compatible REST API)
 // ============================================================
 export async function callGroq(options: AiGenerateOptions): Promise<AiGenerateResult> {
-  const apiKey = process.env.FALLBACK_API_KEY || process.env.GROQ_API_KEY;
-  const defaultModel = options.image
+  const apiKey = (process.env.FALLBACK_API_KEY || process.env.GROQ_API_KEY || "").trim();
+  const defaultModel = (options.image
     ? process.env.FALLBACK_VISION_MODEL || "llama-3.2-11b-vision-preview"
-    : process.env.FALLBACK_MODEL || "groq/compound-mini";
+    : process.env.FALLBACK_MODEL || "llama-3.3-70b-versatile").trim();
 
   if (!apiKey) {
     throw new Error("FALLBACK_API_KEY (Groq API Key) is not configured in environment.");
