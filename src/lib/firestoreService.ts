@@ -172,12 +172,13 @@ export function subscribeToUserProfile(userId: string, onUpdate: (profile: UserP
 // ------------------
 export function subscribeToUserTopics(userId: string, onUpdate: (topics: SyllabusTopic[]) => void) {
   if (!userId) return () => {};
-  const q = query(collection(db, 'topics'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'topics'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const loadedTopics: SyllabusTopic[] = [];
     snapshot.forEach((d) => {
       loadedTopics.push(d.data() as SyllabusTopic);
     });
+    loadedTopics.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(loadedTopics);
   }, (err) => {
     handleError('Error subscribing to topics:', err);
@@ -218,12 +219,13 @@ export async function deleteTopic(userId: string, topicId: string) {
 // ------------------
 export function subscribeToSavedMistakes(userId: string, onUpdate: (mistakes: SavedMistake[]) => void) {
   if (!userId) return () => {};
-  const q = query(collection(db, 'savedMistakes'), where('userId', '==', userId), orderBy('dateAdded', 'desc'));
+  const q = query(collection(db, 'savedMistakes'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const mistakes: SavedMistake[] = [];
     snapshot.forEach((d) => {
       mistakes.push(d.data() as SavedMistake);
     });
+    mistakes.sort((a, b) => new Date(b.dateAdded || 0).getTime() - new Date(a.dateAdded || 0).getTime());
     onUpdate(mistakes);
   }, (err) => {
     handleError('Error subscribing to saved mistakes:', err);
@@ -263,12 +265,13 @@ export async function removeMistakeFromFirestore(userId: string, questionId: str
 // ------------------
 export function subscribeToExamAttempts(userId: string, onUpdate: (attempts: ExamAttempt[]) => void) {
   if (!userId) return () => {};
-  const q = query(collection(db, 'examAttempts'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'examAttempts'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const attempts: ExamAttempt[] = [];
     snapshot.forEach((d) => {
       attempts.push(d.data() as ExamAttempt);
     });
+    attempts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(attempts);
   }, (err) => {
     handleError('Error subscribing to exam attempts:', err);
@@ -308,12 +311,13 @@ export async function deleteExamAttempt(userId: string, attemptId: string) {
 // ------------------
 export function subscribeToDailyTargets(userId: string, onUpdate: (targets: DailyTarget[]) => void) {
   if (!userId) return () => {};
-  const q = query(collection(db, 'dailyTargets'), where('userId', '==', userId), orderBy('dueDate', 'asc'));
+  const q = query(collection(db, 'dailyTargets'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const targets: DailyTarget[] = [];
     snapshot.forEach((d) => {
       targets.push(d.data() as DailyTarget);
     });
+    targets.sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime());
     onUpdate(targets);
   }, (err) => {
     handleError('Error subscribing to daily targets:', err);
@@ -392,17 +396,22 @@ export async function deleteUserNote(noteId: string) {
 
 export function subscribeToUserNotes(userId: string, onUpdate: (notes: UserNote[]) => void) {
   if (!userId) return () => {};
-  const q = query(collection(db, 'userNotes'), where('userId', '==', userId), orderBy('lastModified', 'desc'));
+  const q = query(collection(db, 'userNotes'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const notes: UserNote[] = [];
     snapshot.forEach((d) => notes.push(d.data() as UserNote));
+    notes.sort((a, b) => new Date(b.lastModified || 0).getTime() - new Date(a.lastModified || 0).getTime());
     onUpdate(notes);
   }, (err) => {
     handleError('Error subscribing to user notes:', err);
   });
 }
 
-export async function createCustomMCQ(customMcq: CustomMCQ) {
+export async function createCustomMCQ(userIdOrMcq: string | CustomMCQ, maybeMcq?: Omit<CustomMCQ, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) {
+  const customMcq = typeof userIdOrMcq === 'string' 
+    ? { ...maybeMcq, userId: userIdOrMcq } as CustomMCQ 
+    : userIdOrMcq;
+
   if (!customMcq.userId) return;
   try {
     const mcqRef = doc(collection(db, 'customMCQs'));
@@ -443,10 +452,11 @@ export async function deleteCustomMCQ(customMcqId: string) {
 
 export function subscribeToCustomMCQs(userId: string, onUpdate: (items: CustomMCQ[]) => void) {
   if (!userId) return () => {};
-  const q = query(collection(db, 'customMCQs'), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'customMCQs'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const items: CustomMCQ[] = [];
     snapshot.forEach((d) => items.push(d.data() as CustomMCQ));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to custom MCQs:', err);
@@ -503,11 +513,12 @@ export async function deleteAdminMcq(mcqId: string) {
 export function subscribeToAdminMcqs(onUpdate: (items: Array<MCQQuestion & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.mcqs);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as MCQQuestion & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin MCQs:', err);
@@ -516,10 +527,11 @@ export function subscribeToAdminMcqs(onUpdate: (items: Array<MCQQuestion & { id:
 
 export function subscribeToPublishedMcqs(onUpdate: (items: Array<MCQQuestion & { id: string; status: AdminContentStatus }>) => void) {
   const collectionRef = collection(db, adminCollections.mcqs);
-  const q = query(collectionRef, where('status', '==', 'PUBLISHED'), orderBy('createdAt', 'desc'));
+  const q = query(collectionRef, where('status', '==', 'PUBLISHED'));
   return onSnapshot(q, (snapshot) => {
     const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as MCQQuestion & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to published MCQs:', err);
