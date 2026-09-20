@@ -110,7 +110,7 @@ export function extractJsonFromText(text: string): any {
 // ============================================================
 export async function callGemini(options: AiGenerateOptions): Promise<AiGenerateResult> {
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY environment variable is not configured.");
@@ -277,16 +277,16 @@ export async function callWithFallback(options: AiGenerateOptions): Promise<AiGe
   } catch (primaryError: any) {
     const isQuota = isQuotaOrRateLimitError(primaryError);
 
-    // If error is NOT a quota/rate-limit error, or if fallback is not configured, rethrow immediately
-    if (!isQuota || !fallbackEnabled || !hasFallbackKey) {
+    // If fallback is not configured or disabled, rethrow immediately
+    if (!fallbackEnabled || !hasFallbackKey) {
       if (isQuota) {
         console.warn(`[AI Gateway] Gemini rate limited (429), but fallback is not configured or disabled.`);
       }
       throw primaryError;
     }
 
-    // 2. Execute Fallback (Groq) on Quota/Rate-Limit failure
-    console.warn(`[AI Gateway] Primary (Gemini) quota exhausted / rate limited (429). Failing over to Groq fallback...`);
+    // 2. Execute Fallback (Groq) on Primary failure
+    console.warn(`[AI Gateway] Primary (Gemini) failed (${primaryError.message}). Failing over to Groq fallback...`);
     
     try {
       const fallbackResult = await callGroq(options);
