@@ -1,7 +1,10 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { initializeApp as initAdminApp, getApps as getAdminApps } from "firebase-admin/app";
+import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.ts";
 
 dotenv.config({ path: ".env.local" });
@@ -11,7 +14,24 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 // DEV_HOST can be used locally to bind the server to a hostname (e.g. directed-spirit-9ds98.firebaseapp.com)
 const HOST = process.env.DEV_HOST || process.env.HOST || '0.0.0.0';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+
+// Initialize Firebase Admin for server-side ID token verification
+let adminApp: any;
+if (!getAdminApps().length) {
+  let projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
+  if (!projectId) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
+      projectId = cfg.projectId;
+    } catch {}
+  }
+  adminApp = initAdminApp({ projectId: projectId || "nmdcat-prep-pro" });
+} else {
+  adminApp = getAdminApps()[0];
+}
+
+const adminAuth = getAdminAuth(adminApp);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -27,7 +47,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check endpoint
+// Health check endpoint (Publicly accessible)
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -38,6 +58,44 @@ app.get("/api/health", (_req, res) => {
     }
   });
 });
+
+// Authentication Middleware to protect all subsequent AI-consuming endpoints
+const requireFirebaseAuth = async (req: any, res: any, next: any) => {
+  // Public health check bypass
+  if (req.url === "/api/health" || req.url === "/health") {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: "Authentication required. Please sign in to access AI features.",
+      code: "auth/missing-token"
+    });
+  }
+
+  const idToken = authHeader.split("Bearer ")[1]?.trim();
+  if (!idToken) {
+    return res.status(401).json({
+      error: "Malformed Authorization header. Expected format: Bearer <token>",
+      code: "auth/invalid-token-format"
+    });
+  }
+
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    req.user = decodedToken;
+    req.userId = decodedToken.uid;
+    next();
+  } catch (err: any) {
+    return res.status(401).json({
+      error: "Invalid or expired Firebase authentication token.",
+      code: err?.code || "auth/unauthorized"
+    });
+  }
+};
+
+app.use(requireFirebaseAuth);
 
 // API Endpoint: Parse PDF File to Plain Text
 app.post("/api/parse-pdf", async (req, res) => {
