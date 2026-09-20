@@ -165,21 +165,19 @@ export function extractJsonFromText(text: string): any {
   throw new Error(`Failed to parse AI output as JSON. Raw output preview: ${cleaned.substring(0, 300)}`);
 }
 
-// Active Gemini model cascade list
+// Active Gemini model cascade list (prioritizing high-throughput, low-latency models)
 const GEMINI_CASCADE_MODELS = [
-  process.env.GEMINI_MODEL || "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
+  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
-  "gemini-flash-lite-latest",
   "gemini-3.5-flash",
   "gemini-3.6-flash"
 ];
 
-// Active Groq model cascade list
+// Active Groq model cascade list (ultra-fast OpenAI-compatible fallback)
 const GROQ_CASCADE_MODELS = [
   process.env.FALLBACK_MODEL || "groq/compound-mini",
-  "groq/compound",
   "qwen/qwen3.8-27b",
+  "groq/compound",
   "openai/gpt-oss-120b",
   "openai/gpt-oss-20b"
 ];
@@ -238,6 +236,7 @@ export async function callGemini(options: AiGenerateOptions): Promise<AiGenerate
   // Deduplicate model candidates while keeping priority
   const modelsToTry = Array.from(new Set(GEMINI_CASCADE_MODELS));
   let lastError: any = null;
+  let quotaErrorCount = 0;
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const candidateModel = modelsToTry[i];
@@ -260,11 +259,18 @@ export async function callGemini(options: AiGenerateOptions): Promise<AiGenerate
     } catch (err: any) {
       lastError = err;
       const isQuota = isQuotaOrRateLimitError(err);
-      console.warn(`[AI Gateway] Gemini model '${candidateModel}' failed (${isQuota ? 'Quota/Rate Limit' : err.message}). ${i < modelsToTry.length - 1 ? 'Cascading to next Gemini model...' : 'All Gemini models exhausted.'}`);
+      if (isQuota) quotaErrorCount++;
+
+      console.warn(`[AI Gateway] Gemini model '${candidateModel}' failed (${isQuota ? 'Quota/Rate Limit' : err.message}). ${i < modelsToTry.length - 1 ? 'Cascading...' : 'Gemini models exhausted.'}`);
       
-      // If there are more Gemini models to try, wait briefly and try next
+      // If 2 Gemini models fail with key-level quota exhaustion, failover immediately to Groq
+      if (quotaErrorCount >= 2) {
+        console.warn(`[AI Gateway] Account quota exhausted on Gemini. Fast-failing over to Groq cascade...`);
+        break;
+      }
+
       if (i < modelsToTry.length - 1) {
-        await sleep(200);
+        await sleep(100);
       }
     }
   }

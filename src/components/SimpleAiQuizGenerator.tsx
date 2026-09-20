@@ -25,7 +25,16 @@ import {
   Share2,
   FileText
 } from 'lucide-react';
-import { saveMistakeToFirestore, saveAiQuiz, updateAiQuizAttempt, deleteAiQuiz, subscribeToAiQuizzes, createCustomMCQ } from '../lib/firestoreService';
+import { 
+  saveMistakeToFirestore, 
+  saveAiQuiz, 
+  updateAiQuizAttempt, 
+  deleteAiQuiz, 
+  subscribeToAiQuizzes, 
+  createCustomMCQ,
+  fetchPublishedMcqsForTopic,
+  fetchRandomPublishedMcqs
+} from '../lib/firestoreService';
 import type { User } from '../lib/firebase';
 
 interface GeneratedQuestion {
@@ -90,6 +99,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [savedAll, setSavedAll] = useState(false);
   const [copiedQuiz, setCopiedQuiz] = useState(false);
+  const [fallbackSource, setFallbackSource] = useState<string | null>(null);
 
   // Sync to localStorage
   useEffect(() => {
@@ -101,19 +111,13 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   // Load saved quizzes from Firestore on mount
   useEffect(() => {
     if (!firebaseUser) return;
-
     setIsLoadingQuizzes(true);
     const unsubscribe = subscribeToAiQuizzes(firebaseUser.uid, (quizzes) => {
       if (quizzes && quizzes.length > 0) {
-        setSavedQuizzes(prev => {
-          const map = new Map();
-          [...prev, ...quizzes].forEach(q => map.set(q.id, q));
-          return Array.from(map.values());
-        });
+        setSavedQuizzes(quizzes);
       }
       setIsLoadingQuizzes(false);
     });
-
     return () => unsubscribe();
   }, [firebaseUser]);
 
@@ -199,44 +203,98 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       console.warn('Failed to save MCQ to localStorage:', err);
     }
 
-    // 2. Sync to Firestore if authenticated
+    // 2. Persist to Firestore if user logged in
     if (firebaseUser) {
       try {
-        await createCustomMCQ(customMcq);
+        await createCustomMCQ(firebaseUser.uid, {
+          subject: subject,
+          chapter: topic || 'AI Generated',
+          topic: topic || 'AI Generated',
+          question: q.question,
+          options: q.options,
+          correctIndex: correctIdx >= 0 ? correctIdx : 0,
+          explanation: q.explanation || '',
+          difficulty: (q.difficulty === 'Easy' || q.difficulty === 'Medium' || q.difficulty === 'Hard') ? q.difficulty : 'Medium',
+          type: 'Standard',
+          cognitiveLevel: 'Application'
+        });
       } catch (err) {
-        console.warn('Failed to save custom MCQ to Firestore:', err);
+        console.warn('Failed to save MCQ to Firestore:', err);
       }
     }
 
-    setSavedQuestionIndices(prev => ({ ...prev, [questionIndex]: true }));
     setSavingQuestionIndices(prev => ({ ...prev, [questionIndex]: false }));
+    setSavedQuestionIndices(prev => ({ ...prev, [questionIndex]: true }));
   };
 
   const handleSaveAllQuestions = async () => {
-    if (!generatedQuestions.length) return;
+    if (!generatedQuestions || !generatedQuestions.length) return;
     setIsSavingAll(true);
 
-    for (let i = 0; i < generatedQuestions.length; i++) {
-      if (!savedQuestionIndices[i]) {
-        await handleSaveQuestion(i);
+    const optionLetters = ['A', 'B', 'C', 'D'];
+    const mcqsToSave: CustomMCQ[] = generatedQuestions.map((q, idx) => ({
+      id: `ai_mcq_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+      userId: firebaseUser ? firebaseUser.uid : 'local_student',
+      subject: subject,
+      chapter: topic || 'AI Generated',
+      topic: topic || 'AI Generated',
+      question: q.question,
+      options: q.options,
+      correctIndex: optionLetters.indexOf(q.correctAnswer) >= 0 ? optionLetters.indexOf(q.correctAnswer) : 0,
+      explanation: q.explanation || '',
+      difficulty: (q.difficulty === 'Easy' || q.difficulty === 'Medium' || q.difficulty === 'Hard') ? q.difficulty : 'Medium',
+      type: 'Standard',
+      cognitiveLevel: 'Application',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+
+    // 1. Cache to local storage
+    try {
+      const existing = JSON.parse(localStorage.getItem('nmdcat_custom_mcqs') || '[]');
+      localStorage.setItem('nmdcat_custom_mcqs', JSON.stringify([...mcqsToSave, ...existing]));
+    } catch (err) {
+      console.warn('Failed to bulk save MCQs to localStorage:', err);
+    }
+
+    // 2. Persist to Firestore
+    if (firebaseUser) {
+      for (const mcq of mcqsToSave) {
+        try {
+          await createCustomMCQ(firebaseUser.uid, {
+            subject: mcq.subject,
+            chapter: mcq.chapter,
+            topic: mcq.topic,
+            question: mcq.question,
+            options: mcq.options,
+            correctIndex: mcq.correctIndex,
+            explanation: mcq.explanation,
+            difficulty: mcq.difficulty,
+            type: mcq.type,
+            cognitiveLevel: mcq.cognitiveLevel
+          });
+        } catch (err) {
+          console.warn('Failed to bulk save individual MCQ to Firestore:', err);
+        }
       }
     }
 
-    setSavedAll(true);
+    const allIndices: Record<number, boolean> = {};
+    generatedQuestions.forEach((_, idx) => { allIndices[idx] = true; });
+    setSavedQuestionIndices(allIndices);
     setIsSavingAll(false);
+    setSavedAll(true);
   };
 
   const handleCopyQuiz = () => {
-    if (!generatedQuestions.length) return;
-
+    if (!generatedQuestions || !generatedQuestions.length) return;
     const text = generatedQuestions.map((q, idx) => {
-      const opts = q.options.map((opt, i) => `  ${['A', 'B', 'C', 'D'][i]}) ${opt}`).join('\n');
-      return `Q${idx + 1}. [${subject} - ${topic} | ${q.difficulty}]\n${q.question}\n${opts}\n\nCorrect Answer: ${q.correctAnswer}\nExplanation: ${q.explanation}\n`;
-    }).join('\n----------------------------------------\n\n');
+      return `Q${idx + 1}: ${q.question}\nA) ${q.options[0]}\nB) ${q.options[1]}\nC) ${q.options[2]}\nD) ${q.options[3]}\nCorrect Answer: ${q.correctAnswer}\nExplanation: ${q.explanation}\n`;
+    }).join('\n---\n\n');
 
     navigator.clipboard.writeText(text);
     setCopiedQuiz(true);
-    setTimeout(() => setCopiedQuiz(false), 2500);
+    setTimeout(() => setCopiedQuiz(false), 2000);
   };
 
   const handleDeleteQuiz = async (quizId: string) => {
@@ -288,6 +346,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
 
     setIsGenerating(true);
     setError(null);
+    setFallbackSource(null);
     setGeneratedQuestions([]);
     setUserAnswers({});
     setShowResults(false);
@@ -311,7 +370,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       try {
         data = JSON.parse(rawText);
       } catch {
-        throw new Error(rawText?.slice(0, 150) || `Server error (${response.status}). Please verify API keys on Vercel.`);
+        throw new Error(rawText?.slice(0, 150) || `Server error (${response.status}).`);
       }
 
       if (!response.ok) {
@@ -319,6 +378,10 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       }
 
       const questions = data.questions || [];
+      if (questions.length === 0) {
+        throw new Error('AI returned no valid questions. Engaging database fallback...');
+      }
+
       setGeneratedQuestions(questions);
       
       // Auto-save the generated quiz
@@ -326,6 +389,33 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         saveQuizToFirestore(questions);
       }
     } catch (err: any) {
+      console.warn('AI Quiz Generation failed, attempting resilient database fallback:', err.message);
+
+      // Resilient Fallback: Retrieve from 2,593 PMDC Question Database
+      try {
+        const dbQuestions = await fetchPublishedMcqsForTopic(subject, undefined, topic, questionCount);
+        const pool = dbQuestions.length > 0 ? dbQuestions : await fetchRandomPublishedMcqs({ subject, limitCount: questionCount });
+
+        if (pool && pool.length > 0) {
+          const fallbackMapped: GeneratedQuestion[] = pool.slice(0, questionCount).map(q => ({
+            question: q.question,
+            options: q.options,
+            correctAnswer: (['A', 'B', 'C', 'D'][q.correctIndex] || 'A'),
+            explanation: q.explanation || 'Verified PMDC standard answer.',
+            difficulty: difficultyMode,
+            concept: q.topic || q.chapter || topic
+          }));
+
+          setGeneratedQuestions(fallbackMapped);
+          setFallbackSource('PMDC Master Database Repository (2,593 Questions)');
+          setError(null);
+          saveQuizToFirestore(fallbackMapped);
+          return;
+        }
+      } catch (dbErr: any) {
+        console.warn('Database fallback also encountered error:', dbErr);
+      }
+
       setError(err.message || 'Failed to generate quiz. Please try again.');
     } finally {
       setIsGenerating(false);
@@ -846,6 +936,12 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                   {difficultyMode}
                 </span>
+                {fallbackSource && (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-cyan-400" />
+                    {fallbackSource}
+                  </span>
+                )}
               </div>
 
               {/* Action Buttons: Save Quiz, Save All MCQs, Copy */}
