@@ -131,6 +131,7 @@ const requireFirebaseAuth = async (req: any, res: any, next: any) => {
     const decodedToken = await verifyFirebaseToken(idToken, firebaseProjectId);
     req.user = decodedToken;
     req.userId = decodedToken.user_id || decodedToken.sub;
+    req.rawToken = idToken;
     next();
   } catch (err: any) {
     return res.status(401).json({
@@ -144,90 +145,141 @@ const requireFirebaseAuth = async (req: any, res: any, next: any) => {
 app.use(requireFirebaseAuth);
 
 // =====================================================================
-// SERVER-VERIFIED ADMIN AUTHORIZATION & ROLE MANAGEMENT
+// DURABLE FIRESTORE-BACKED ADMIN AUTHORIZATION & ROLE MANAGEMENT
 // =====================================================================
 const SUPER_ADMIN_EMAIL = "mdcatquizbymehran@gmail.com";
 
-// Server-side in-memory & file-persisted admin registry
-interface AdminRecord {
-  email: string;
-  uid?: string;
-  displayName?: string;
-  role: 'super_admin' | 'admin';
-  status: 'Active' | 'Suspended';
-  assignedAt: string;
-  assignedBy: string;
-}
-
-const REGISTRY_FILE = path.join(process.cwd(), "data", "admin-registry.json");
-
-function getAdminRegistry(): Record<string, AdminRecord> {
-  const defaultRegistry: Record<string, AdminRecord> = {
-    [SUPER_ADMIN_EMAIL.toLowerCase()]: {
-      email: SUPER_ADMIN_EMAIL.toLowerCase(),
-      displayName: "Mehran Khan (Super Admin)",
-      role: "super_admin",
-      status: "Active",
-      assignedAt: "2026-09-20T00:00:00.000Z",
-      assignedBy: "system"
-    }
-  };
-
+// Helper: Query Firestore REST API for /adminUsers/{uid} document
+async function getFirestoreAdminDoc(uid: string, token: string): Promise<any | null> {
+  if (!uid || !token) return null;
   try {
-    if (fs.existsSync(REGISTRY_FILE)) {
-      const data = JSON.parse(fs.readFileSync(REGISTRY_FILE, "utf8"));
-      // Ensure super admin is always present and active
-      data[SUPER_ADMIN_EMAIL.toLowerCase()] = defaultRegistry[SUPER_ADMIN_EMAIL.toLowerCase()];
-      return data;
-    }
-  } catch (e) {
-    console.warn("[AdminAuth] Warning reading admin registry file:", e);
-  }
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/adminUsers/${uid}`;
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
 
-  return defaultRegistry;
-}
-
-function saveAdminRegistry(registry: Record<string, AdminRecord>): void {
-  try {
-    const dir = path.dirname(REGISTRY_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (res.status === 200) {
+      const data = await res.json();
+      const f = data.fields || {};
+      return {
+        uid: f.uid?.stringValue || uid,
+        email: f.email?.stringValue || '',
+        displayName: f.displayName?.stringValue || '',
+        role: f.role?.stringValue || 'admin',
+        status: f.status?.stringValue || 'Active',
+        createdAt: f.createdAt?.stringValue,
+        createdBy: f.createdBy?.stringValue,
+        updatedAt: f.updatedAt?.stringValue,
+        updatedBy: f.updatedBy?.stringValue
+      };
     }
-    // Always preserve super admin
-    registry[SUPER_ADMIN_EMAIL.toLowerCase()] = {
-      email: SUPER_ADMIN_EMAIL.toLowerCase(),
-      displayName: "Mehran Khan (Super Admin)",
-      role: "super_admin",
-      status: "Active",
-      assignedAt: "2026-09-20T00:00:00.000Z",
-      assignedBy: "system"
-    };
-    fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2), "utf8");
-  } catch (e) {
-    console.warn("[AdminAuth] Warning saving admin registry file (falling back to memory):", e);
+    return null;
+  } catch (err) {
+    console.warn("[AdminAuth] Warning fetching Firestore admin document:", err);
+    return null;
   }
 }
 
-function resolveUserRole(decodedToken: any): { role: 'super_admin' | 'admin' | 'user'; email: string; uid: string } {
+// Helper: Write /adminUsers/{uid} document to Firestore REST API
+async function writeFirestoreAdminDoc(docData: any, token: string): Promise<boolean> {
+  if (!docData?.uid || !token) return false;
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/adminUsers/${docData.uid}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          uid: { stringValue: docData.uid },
+          email: { stringValue: docData.email || '' },
+          displayName: { stringValue: docData.displayName || '' },
+          role: { stringValue: docData.role || 'admin' },
+          status: { stringValue: docData.status || 'Active' },
+          createdAt: { stringValue: docData.createdAt || new Date().toISOString() },
+          createdBy: { stringValue: docData.createdBy || 'Super Admin' },
+          updatedAt: { stringValue: new Date().toISOString() },
+          updatedBy: { stringValue: docData.updatedBy || 'Super Admin' }
+        }
+      })
+    });
+
+    return res.status === 200;
+  } catch (err) {
+    console.error("[AdminAuth] Error writing Firestore admin document:", err);
+    return false;
+  }
+}
+
+// Helper: List all /adminUsers documents from Firestore REST API
+async function listFirestoreAdmins(token: string): Promise<any[]> {
+  if (!token) return [];
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/adminUsers`;
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (res.status === 200) {
+      const data = await res.json();
+      if (data.documents && Array.isArray(data.documents)) {
+        return data.documents.map((d: any) => {
+          const f = d.fields || {};
+          const uid = f.uid?.stringValue || d.name.split('/').pop();
+          return {
+            id: uid,
+            uid: uid,
+            email: f.email?.stringValue || '',
+            name: f.displayName?.stringValue || f.email?.stringValue || uid,
+            role: f.role?.stringValue === 'super_admin' ? 'Super Admin' : (f.role?.stringValue || 'Admin'),
+            status: f.status?.stringValue || 'Active',
+            createdAt: f.createdAt?.stringValue,
+            createdBy: f.createdBy?.stringValue,
+            updatedAt: f.updatedAt?.stringValue,
+            updatedBy: f.updatedBy?.stringValue
+          };
+        });
+      }
+    }
+    return [];
+  } catch (err) {
+    console.warn("[AdminAuth] Warning listing Firestore admin documents:", err);
+    return [];
+  }
+}
+
+// Durable Role Resolution Engine
+async function resolveUserRole(decodedToken: any, rawToken?: string): Promise<{ role: 'super_admin' | 'admin' | 'user'; email: string; uid: string }> {
   const email = (decodedToken?.email || "").trim().toLowerCase();
   const uid = decodedToken?.user_id || decodedToken?.sub || "";
+  const isEmailVerified = decodedToken?.email_verified === true || decodedToken?.firebase?.sign_in_provider === 'google.com';
 
-  if (email && email === SUPER_ADMIN_EMAIL.toLowerCase()) {
+  // 1. Primary Immutable Super Admin Root Identity
+  if (email && email === SUPER_ADMIN_EMAIL.toLowerCase() && isEmailVerified) {
     return { role: "super_admin", email, uid };
   }
 
-  const registry = getAdminRegistry();
-  const entry = (email && registry[email]) || (uid && registry[uid]);
-
-  if (entry && entry.status === "Active") {
-    return { role: entry.role === "super_admin" ? "super_admin" : "admin", email, uid };
+  // 2. Secondary Admin Check via Durable Firestore /adminUsers/{uid}
+  if (uid && rawToken) {
+    const adminDoc = await getFirestoreAdminDoc(uid, rawToken);
+    if (adminDoc && adminDoc.role === "admin" && adminDoc.status === "Active") {
+      return { role: "admin", email: adminDoc.email || email, uid };
+    }
   }
 
+  // 3. Default for all other authenticated & anonymous users
   return { role: "user", email, uid };
 }
 
-const requireAdmin = (req: any, res: any, next: any) => {
-  const roleInfo = resolveUserRole(req.user);
+const requireAdmin = async (req: any, res: any, next: any) => {
+  const rawToken = req.rawToken || req.headers.authorization?.split("Bearer ")[1]?.trim();
+  const roleInfo = await resolveUserRole(req.user, rawToken);
   req.userRole = roleInfo.role;
   if (roleInfo.role === "super_admin" || roleInfo.role === "admin") {
     return next();
@@ -239,8 +291,9 @@ const requireAdmin = (req: any, res: any, next: any) => {
   });
 };
 
-const requireSuperAdmin = (req: any, res: any, next: any) => {
-  const roleInfo = resolveUserRole(req.user);
+const requireSuperAdmin = async (req: any, res: any, next: any) => {
+  const rawToken = req.rawToken || req.headers.authorization?.split("Bearer ")[1]?.trim();
+  const roleInfo = await resolveUserRole(req.user, rawToken);
   req.userRole = roleInfo.role;
   if (roleInfo.role === "super_admin") {
     return next();
@@ -253,8 +306,8 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
 };
 
 // GET /api/admin/role: Return verified role for the authenticated user
-app.get("/api/admin/role", (req: any, res: any) => {
-  const roleInfo = resolveUserRole(req.user);
+app.get("/api/admin/role", async (req: any, res: any) => {
+  const roleInfo = await resolveUserRole(req.user, req.rawToken);
   res.json({
     success: true,
     uid: roleInfo.uid,
@@ -265,18 +318,38 @@ app.get("/api/admin/role", (req: any, res: any) => {
   });
 });
 
-// GET /api/admin/users: List all administrators (Requires Admin)
-app.get("/api/admin/users", requireAdmin, (_req: any, res: any) => {
-  const registry = getAdminRegistry();
-  const users = Object.values(registry);
-  res.json({ success: true, users });
+// GET /api/admin/users: List all administrators from Firestore (Requires Admin)
+app.get("/api/admin/users", requireAdmin, async (req: any, res: any) => {
+  const firestoreAdmins = await listFirestoreAdmins(req.rawToken);
+
+  // Ensure root Super Admin is always present and active at top
+  const superAdminEntry = {
+    id: "super_admin",
+    uid: "super_admin",
+    email: SUPER_ADMIN_EMAIL,
+    name: "Mehran Khan (Super Admin)",
+    role: "Super Admin",
+    status: "Active",
+    createdAt: "2026-09-20T00:00:00.000Z",
+    createdBy: "system"
+  };
+
+  const secondaryAdmins = firestoreAdmins.filter(
+    (a: any) => a.email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()
+  );
+
+  res.json({
+    success: true,
+    users: [superAdminEntry, ...secondaryAdmins]
+  });
 });
 
-// POST /api/admin/assign-role: Add or assign admin role (Requires Super Admin)
-app.post("/api/admin/assign-role", requireSuperAdmin, (req: any, res: any) => {
+// POST /api/admin/assign-role: Add or assign admin role in Firestore (Requires Super Admin)
+app.post("/api/admin/assign-role", requireSuperAdmin, async (req: any, res: any) => {
   try {
     const { targetEmail, targetUid, role, displayName } = req.body;
     const normalizedEmail = (targetEmail || "").trim().toLowerCase();
+    const uid = targetUid || (normalizedEmail ? `usr_${Buffer.from(normalizedEmail).toString('hex').slice(0, 24)}` : '');
 
     if (!normalizedEmail && !targetUid) {
       return res.status(400).json({ error: "Target email or target UID is required." });
@@ -290,31 +363,29 @@ app.post("/api/admin/assign-role", requireSuperAdmin, (req: any, res: any) => {
       return res.status(400).json({ error: "Invalid role. Cannot assign super_admin to other accounts." });
     }
 
-    const registry = getAdminRegistry();
-    const key = normalizedEmail || targetUid;
+    const docData = {
+      uid: uid,
+      email: normalizedEmail,
+      displayName: displayName || normalizedEmail.split("@")[0] || "Administrator",
+      role: role === "user" ? "user" : "admin",
+      status: role === "user" ? "Revoked" : "Active",
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.email || req.user.sub || "Super Admin",
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.email || req.user.sub || "Super Admin"
+    };
 
-    if (role === "user") {
-      delete registry[key];
-    } else {
-      registry[key] = {
-        email: normalizedEmail,
-        uid: targetUid || "",
-        displayName: displayName || normalizedEmail.split("@")[0] || "Administrator",
-        role: "admin",
-        status: "Active",
-        assignedAt: new Date().toISOString(),
-        assignedBy: req.user.email || req.user.sub || "Super Admin"
-      };
+    const writeSuccess = await writeFirestoreAdminDoc(docData, req.rawToken);
+    if (!writeSuccess) {
+      return res.status(500).json({ error: "Failed to persist admin role to Firestore." });
     }
 
-    saveAdminRegistry(registry);
-
-    console.log(`[SECURITY AUDIT] [ASSIGN_ROLE] Acting: ${req.user.email || req.user.sub} -> Target: ${normalizedEmail || targetUid} | New Role: ${role} | Time: ${new Date().toISOString()}`);
+    console.log(`[SECURITY AUDIT] [ASSIGN_ROLE] Acting: ${req.user.email || req.user.sub} -> Target: ${normalizedEmail || uid} | Role: ${role} | Time: ${new Date().toISOString()}`);
 
     res.json({
       success: true,
-      message: `Role successfully updated to '${role}' for ${normalizedEmail || targetUid}.`,
-      target: normalizedEmail || targetUid,
+      message: `Role successfully updated to '${role}' for ${normalizedEmail || uid}.`,
+      target: normalizedEmail || uid,
       role: role === "user" ? "user" : "admin"
     });
   } catch (error: any) {
@@ -323,11 +394,12 @@ app.post("/api/admin/assign-role", requireSuperAdmin, (req: any, res: any) => {
   }
 });
 
-// POST /api/admin/revoke-role: Revoke administrator privileges (Requires Super Admin)
-app.post("/api/admin/revoke-role", requireSuperAdmin, (req: any, res: any) => {
+// POST /api/admin/revoke-role: Revoke administrator privileges in Firestore (Requires Super Admin)
+app.post("/api/admin/revoke-role", requireSuperAdmin, async (req: any, res: any) => {
   try {
     const { targetEmail, targetUid } = req.body;
     const normalizedEmail = (targetEmail || "").trim().toLowerCase();
+    const uid = targetUid || (normalizedEmail ? `usr_${Buffer.from(normalizedEmail).toString('hex').slice(0, 24)}` : '');
 
     if (!normalizedEmail && !targetUid) {
       return res.status(400).json({ error: "Target email or target UID is required." });
@@ -337,19 +409,25 @@ app.post("/api/admin/revoke-role", requireSuperAdmin, (req: any, res: any) => {
       return res.status(403).json({ error: "Super Admin privileges cannot be revoked or demoted." });
     }
 
-    const registry = getAdminRegistry();
-    const key = normalizedEmail || targetUid;
+    const docData = {
+      uid: uid,
+      email: normalizedEmail,
+      role: "user",
+      status: "Revoked",
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.user.email || req.user.sub || "Super Admin"
+    };
 
-    if (registry[key]) {
-      delete registry[key];
-      saveAdminRegistry(registry);
+    const updateSuccess = await writeFirestoreAdminDoc(docData, req.rawToken);
+    if (!updateSuccess) {
+      return res.status(500).json({ error: "Failed to update admin role in Firestore." });
     }
 
-    console.log(`[SECURITY AUDIT] [REVOKE_ROLE] Acting: ${req.user.email || req.user.sub} -> Target: ${normalizedEmail || targetUid} | Time: ${new Date().toISOString()}`);
+    console.log(`[SECURITY AUDIT] [REVOKE_ROLE] Acting: ${req.user.email || req.user.sub} -> Target: ${normalizedEmail || uid} | Time: ${new Date().toISOString()}`);
 
     res.json({
       success: true,
-      message: `Admin privileges successfully revoked for ${normalizedEmail || targetUid}.`
+      message: `Admin privileges successfully revoked for ${normalizedEmail || uid}.`
     });
   } catch (error: any) {
     console.error("Revoke Role Error:", error);
