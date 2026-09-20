@@ -40,7 +40,7 @@ const DEFAULT_RETRY_DELAY_MS = 500;
 
 const isServiceUnavailableStatus = (status: number) => [502, 503, 504].includes(status);
 const isAuthStatus = (status: number) => status === 401 || status === 403;
-const isRetryableStatus = (status: number) => [408, 502, 503, 504].includes(status);
+const isRetryableStatus = (status: number) => [408, 429, 502, 503, 504].includes(status);
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const AI_REQUEST_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
@@ -55,9 +55,9 @@ export function getAiFriendlyMessage(error: unknown): string {
       case 'auth':
         return 'Authentication failed while accessing AI. Please refresh or sign in again.';
       case 'rate_limited':
-        return 'AI daily free-tier quota reached (20 requests/day). Please upgrade API key or retry tomorrow.';
+        return 'AI provider rate-limit reached. Automatically retrying with fallback provider...';
       case 'service_unavailable':
-        return 'The AI service is temporarily unavailable. Please wait a moment and retry.';
+        return 'The AI service is temporarily busy. Retrying...';
       case 'invalid_response':
         return 'The AI service returned an unexpected response. Please try again.';
       case 'cancelled':
@@ -190,7 +190,7 @@ export async function aiFetch<T = any>(
 
       const shouldRetry =
         attempt < maxRetries &&
-        (aiError.type === 'network' || aiError.type === 'timeout' || aiError.type === 'service_unavailable');
+        (aiError.type === 'network' || aiError.type === 'timeout' || aiError.type === 'service_unavailable' || aiError.type === 'rate_limited');
 
       if (aiError.type === 'cancelled') {
         throw aiError;
@@ -199,7 +199,7 @@ export async function aiFetch<T = any>(
       if (shouldRetry) {
         lastError = aiError;
         attempt += 1;
-        await delay(retryDelayMs * attempt);
+        await delay(retryDelayMs * attempt * 1.5);
         continue;
       }
 

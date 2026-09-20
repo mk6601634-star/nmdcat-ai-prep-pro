@@ -1,7 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { SubjectType, MCQQuestion, SavedMistake, SavedAiQuiz } from '../types';
-import { Sparkles, Loader2, CheckCircle2, XCircle, RotateCcw, Brain, Bookmark, AlertTriangle, Lightbulb, Target, BookOpen, Dna, FlaskConical, Zap, Languages, ArrowRight, FolderOpen, Trash2 } from 'lucide-react';
-import { saveMistakeToFirestore, saveAiQuiz, updateAiQuizAttempt, deleteAiQuiz, subscribeToAiQuizzes } from '../lib/firestoreService';
+import { SubjectType, MCQQuestion, SavedMistake, SavedAiQuiz, CustomMCQ } from '../types';
+import { 
+  Sparkles, 
+  Loader2, 
+  CheckCircle2, 
+  XCircle, 
+  RotateCcw, 
+  Brain, 
+  Bookmark, 
+  AlertTriangle, 
+  Lightbulb, 
+  Target, 
+  BookOpen, 
+  Dna, 
+  FlaskConical, 
+  Zap, 
+  Languages, 
+  ArrowRight, 
+  FolderOpen, 
+  Trash2,
+  Save,
+  Copy,
+  Check,
+  Share2,
+  FileText
+} from 'lucide-react';
+import { saveMistakeToFirestore, saveAiQuiz, updateAiQuizAttempt, deleteAiQuiz, subscribeToAiQuizzes, createCustomMCQ } from '../lib/firestoreService';
 import type { User } from '../lib/firebase';
 
 interface GeneratedQuestion {
@@ -60,6 +84,13 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   const [reopeningQuiz, setReopeningQuiz] = useState<SavedAiQuiz | null>(null);
   const [isDeleting, setIsDeleting] = useState<Record<string, boolean>>({});
 
+  // Individual and Bulk MCQ Saving State
+  const [savedQuestionIndices, setSavedQuestionIndices] = useState<Record<number, boolean>>({});
+  const [savingQuestionIndices, setSavingQuestionIndices] = useState<Record<number, boolean>>({});
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [savedAll, setSavedAll] = useState(false);
+  const [copiedQuiz, setCopiedQuiz] = useState(false);
+
   // Sync to localStorage
   useEffect(() => {
     try {
@@ -86,21 +117,22 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     return () => unsubscribe();
   }, [firebaseUser]);
 
-  const saveQuizToFirestore = async () => {
-    if (!generatedQuestions.length) return;
+  const saveQuizToFirestore = async (questionsToSave?: GeneratedQuestion[]) => {
+    const qs = questionsToSave || generatedQuestions;
+    if (!qs || !qs.length) return;
 
     setIsSaving(true);
     setSaveError(null);
 
-    const quizId = `ai_quiz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const quizId = savedQuizId || `ai_quiz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newQuiz: SavedAiQuiz = {
       id: quizId,
       userId: firebaseUser ? firebaseUser.uid : 'local_student',
       subject,
       topic,
       difficultyMode,
-      questionCount: generatedQuestions.length,
-      questions: generatedQuestions,
+      questionCount: qs.length,
+      questions: qs,
       attemptCount: 0,
       bestScore: 0,
       lastScore: 0,
@@ -109,7 +141,10 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       updatedAt: new Date().toISOString()
     };
 
-    setSavedQuizzes(prev => [newQuiz, ...prev]);
+    setSavedQuizzes(prev => {
+      const filtered = prev.filter(q => q.id !== quizId);
+      return [newQuiz, ...filtered];
+    });
     setSavedQuizId(quizId);
 
     if (firebaseUser) {
@@ -119,8 +154,8 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
           subject,
           topic,
           difficultyMode,
-          questionCount: generatedQuestions.length,
-          questions: generatedQuestions
+          questionCount: qs.length,
+          questions: qs
         });
       } catch (err: any) {
         console.warn('[Firestore] Background save quiz error:', err);
@@ -128,6 +163,80 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     }
 
     setIsSaving(false);
+  };
+
+  const handleSaveQuestion = async (questionIndex: number) => {
+    const q = generatedQuestions[questionIndex];
+    if (!q) return;
+
+    setSavingQuestionIndices(prev => ({ ...prev, [questionIndex]: true }));
+
+    const optionLetters = ['A', 'B', 'C', 'D'];
+    const correctIdx = optionLetters.indexOf(q.correctAnswer);
+
+    const customMcq: CustomMCQ = {
+      id: `ai_mcq_${Date.now()}_${questionIndex}_${Math.random().toString(36).substring(2, 7)}`,
+      userId: firebaseUser ? firebaseUser.uid : 'local_student',
+      subject: subject,
+      chapter: topic || 'AI Generated',
+      topic: topic || 'AI Generated',
+      question: q.question,
+      options: q.options,
+      correctIndex: correctIdx >= 0 ? correctIdx : 0,
+      explanation: q.explanation || '',
+      difficulty: (q.difficulty === 'Easy' || q.difficulty === 'Medium' || q.difficulty === 'Hard') ? q.difficulty : 'Medium',
+      type: 'Standard',
+      cognitiveLevel: 'Application',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // 1. Cache to local storage
+    try {
+      const existing = JSON.parse(localStorage.getItem('nmdcat_custom_mcqs') || '[]');
+      localStorage.setItem('nmdcat_custom_mcqs', JSON.stringify([customMcq, ...existing]));
+    } catch (err) {
+      console.warn('Failed to save MCQ to localStorage:', err);
+    }
+
+    // 2. Sync to Firestore if authenticated
+    if (firebaseUser) {
+      try {
+        await createCustomMCQ(customMcq);
+      } catch (err) {
+        console.warn('Failed to save custom MCQ to Firestore:', err);
+      }
+    }
+
+    setSavedQuestionIndices(prev => ({ ...prev, [questionIndex]: true }));
+    setSavingQuestionIndices(prev => ({ ...prev, [questionIndex]: false }));
+  };
+
+  const handleSaveAllQuestions = async () => {
+    if (!generatedQuestions.length) return;
+    setIsSavingAll(true);
+
+    for (let i = 0; i < generatedQuestions.length; i++) {
+      if (!savedQuestionIndices[i]) {
+        await handleSaveQuestion(i);
+      }
+    }
+
+    setSavedAll(true);
+    setIsSavingAll(false);
+  };
+
+  const handleCopyQuiz = () => {
+    if (!generatedQuestions.length) return;
+
+    const text = generatedQuestions.map((q, idx) => {
+      const opts = q.options.map((opt, i) => `  ${['A', 'B', 'C', 'D'][i]}) ${opt}`).join('\n');
+      return `Q${idx + 1}. [${subject} - ${topic} | ${q.difficulty}]\n${q.question}\n${opts}\n\nCorrect Answer: ${q.correctAnswer}\nExplanation: ${q.explanation}\n`;
+    }).join('\n----------------------------------------\n\n');
+
+    navigator.clipboard.writeText(text);
+    setCopiedQuiz(true);
+    setTimeout(() => setCopiedQuiz(false), 2500);
   };
 
   const handleDeleteQuiz = async (quizId: string) => {
@@ -182,6 +291,8 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     setGeneratedQuestions([]);
     setUserAnswers({});
     setShowResults(false);
+    setSavedQuestionIndices({});
+    setSavedAll(false);
 
     try {
       const response = await fetch('/api/generate-quiz-simple', {
@@ -207,11 +318,12 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         throw new Error(data.error || data.details || 'Failed to generate quiz');
       }
 
-      setGeneratedQuestions(data.questions || []);
+      const questions = data.questions || [];
+      setGeneratedQuestions(questions);
       
       // Auto-save the generated quiz
-      if (data.questions && data.questions.length > 0 && firebaseUser) {
-        saveQuizToFirestore();
+      if (questions.length > 0) {
+        saveQuizToFirestore(questions);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to generate quiz. Please try again.');
@@ -272,6 +384,73 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     }
   };
 
+  const autoSaveMistakesToVault = async () => {
+    const mistakesToSave: SavedMistake[] = [];
+    const optionLetters = ['A', 'B', 'C', 'D'];
+
+    generatedQuestions.forEach((q, idx) => {
+      const userAnswerLetter = userAnswers[idx];
+      if (userAnswerLetter && userAnswerLetter !== q.correctAnswer) {
+        const wrongOptionIndex = optionLetters.indexOf(userAnswerLetter);
+        const correctOptionIndex = optionLetters.indexOf(q.correctAnswer);
+
+        const mistake: SavedMistake = {
+          questionId: `ai_mistake_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+          question: {
+            id: `ai_mistake_q_${Date.now()}_${idx}`,
+            subject: subject as SubjectType,
+            chapter: topic || 'AI Generated Quiz',
+            topic: topic || 'AI Generated Quiz',
+            question: q.question,
+            options: q.options,
+            correctIndex: correctOptionIndex >= 0 ? correctOptionIndex : 0,
+            explanation: q.explanation,
+            difficulty: (q.difficulty === 'Easy' || q.difficulty === 'Medium' || q.difficulty === 'Hard') ? q.difficulty : 'Medium',
+            type: 'Standard'
+          },
+          wrongAnswerIndex: wrongOptionIndex >= 0 ? wrongOptionIndex : 0,
+          dateAdded: new Date().toISOString(),
+          notes: 'Auto-saved to Mistake Book from AI Quiz',
+          isResolved: false,
+          errorPattern: 'Conceptual Gap'
+        };
+
+        mistakesToSave.push(mistake);
+      }
+    });
+
+    if (mistakesToSave.length > 0) {
+      if (setSavedMistakes) {
+        setSavedMistakes(prev => {
+          const existingQuestions = new Set(prev.map(m => m.question?.question));
+          const uniqueNew = mistakesToSave.filter(m => !existingQuestions.has(m.question.question));
+          return [...uniqueNew, ...prev];
+        });
+      }
+
+      // Sync to localStorage
+      try {
+        const localMistakes = JSON.parse(localStorage.getItem('nmdcat_mistakes') || '[]');
+        const existingQ = new Set(localMistakes.map((m: any) => m.question?.question));
+        const uniqueLocal = mistakesToSave.filter(m => !existingQ.has(m.question?.question));
+        localStorage.setItem('nmdcat_mistakes', JSON.stringify([...uniqueLocal, ...localMistakes]));
+      } catch (err) {
+        console.warn('Failed to update local mistakes cache:', err);
+      }
+
+      // Sync to Firestore if user is signed in
+      if (firebaseUser) {
+        for (const mistake of mistakesToSave) {
+          try {
+            await saveMistakeToFirestore(firebaseUser.uid, mistake);
+          } catch (err) {
+            console.warn('Failed to auto-save mistake to Firestore:', err);
+          }
+        }
+      }
+    }
+  };
+
   const resetQuiz = () => {
     setGeneratedQuestions([]);
     setUserAnswers({});
@@ -282,6 +461,8 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     setSelectedQuestionForAnalysis(null);
     setSavedQuizId(null);
     setReopeningQuiz(null);
+    setSavedQuestionIndices({});
+    setSavedAll(false);
   };
 
   const analyzeWrongAnswer = async (questionIndex: number) => {
@@ -351,11 +532,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     const userAnswer = userAnswers[questionIndex];
     const optionIndex = ['A', 'B', 'C', 'D'].indexOf(userAnswer);
 
-    if (!firebaseUser) {
-      alert('Please sign in to save mistakes to the vault.');
-      return;
-    }
-
     const mistake: SavedMistake = {
       questionId: `ai_quiz_${Date.now()}_${questionIndex}`,
       question: {
@@ -367,25 +543,30 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         options: q.options,
         correctIndex: ['A', 'B', 'C', 'D'].indexOf(q.correctAnswer),
         explanation: q.explanation,
-        difficulty: q.difficulty as 'Easy' | 'Medium' | 'Hard',
+        difficulty: (q.difficulty === 'Easy' || q.difficulty === 'Medium' || q.difficulty === 'Hard') ? q.difficulty : 'Medium',
         type: 'Standard'
       },
-      wrongAnswerIndex: optionIndex,
+      wrongAnswerIndex: optionIndex >= 0 ? optionIndex : 0,
       dateAdded: new Date().toISOString(),
-      notes: wrongAnswerAnalyses[questionIndex]?.knowledgeGap || '',
+      notes: wrongAnswerAnalyses[questionIndex]?.knowledgeGap || 'Added to Mistake Book',
       isResolved: false,
       errorPattern: 'Conceptual Gap'
     };
 
     if (setSavedMistakes) {
-      setSavedMistakes(prev => [mistake, ...prev]);
+      setSavedMistakes(prev => [mistake, ...prev.filter(m => m.question.question !== q.question)]);
     }
+
+    try {
+      const localMistakes = JSON.parse(localStorage.getItem('nmdcat_mistakes') || '[]');
+      localStorage.setItem('nmdcat_mistakes', JSON.stringify([mistake, ...localMistakes.filter((m: any) => m.question?.question !== q.question)]));
+    } catch {}
 
     if (firebaseUser) {
       await saveMistakeToFirestore(firebaseUser.uid, mistake);
     }
 
-    alert('Added to Mistake Vault!');
+    alert('Saved to Mistake Book!');
   };
 
   const getSubjectIcon = (sub: SubjectType) => {
@@ -655,30 +836,125 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       {/* Quiz Display */}
       {generatedQuestions.length > 0 && (
         <div className="space-y-6 max-w-3xl mx-auto">
-          {/* Question Header Progress Bar */}
-          <div className="bg-slate-900/90 p-4 rounded-xl border border-slate-800 flex items-center justify-between gap-4">
-            <div className="text-xs font-bold text-slate-300">
-              AI Quiz: {topic}
+          {/* Question Header Action Bar & Progress Bar */}
+          <div className="bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-lg space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-white">
+                  {subject} &bull; {topic}
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  {difficultyMode}
+                </span>
+              </div>
+
+              {/* Action Buttons: Save Quiz, Save All MCQs, Copy */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => saveQuizToFirestore()}
+                  disabled={isSaving}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    savedQuizId
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                  }`}
+                  title="Save entire quiz to My AI Quizzes"
+                >
+                  {isSaving ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : savedQuizId ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  <span>{savedQuizId ? 'Quiz Saved' : 'Save Quiz'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveAllQuestions}
+                  disabled={isSavingAll}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    savedAll
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                  }`}
+                  title="Save all MCQs into your Custom Question Bank"
+                >
+                  {isSavingAll ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Bookmark className={`w-3.5 h-3.5 ${savedAll ? 'fill-indigo-400 text-indigo-400' : ''}`} />
+                  )}
+                  <span>{savedAll ? 'All MCQs Saved' : 'Save All MCQs'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyQuiz}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-all"
+                  title="Copy questions, options and explanations to clipboard"
+                >
+                  {copiedQuiz ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-            <div className="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                style={{ width: `${(Object.keys(userAnswers).length / generatedQuestions.length) * 100}%` }}
-              />
+
+            {/* Progress bar */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${(Object.keys(userAnswers).length / generatedQuestions.length) * 100}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-slate-400 font-medium">
+                {Object.keys(userAnswers).length} / {generatedQuestions.length} answered
+              </span>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-indigo-400 border border-slate-700">
-              {difficultyMode}
-            </span>
           </div>
 
           {/* Questions */}
           {generatedQuestions.map((q, idx) => (
             <div key={idx} className="bg-slate-900/90 p-6 sm:p-8 rounded-2xl border border-slate-800 shadow-xl space-y-6">
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-400">Question {idx + 1} of {generatedQuestions.length}</span>
-                  <span className="text-xs text-slate-500">• {q.difficulty}</span>
-                  <span className="text-xs text-slate-500">• {q.concept}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-400">Question {idx + 1} of {generatedQuestions.length}</span>
+                    <span className="text-xs text-slate-500">• {q.difficulty}</span>
+                    <span className="text-xs text-slate-500">• {q.concept}</span>
+                  </div>
+
+                  {/* Bookmark / Save MCQ Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleSaveQuestion(idx)}
+                    disabled={savingQuestionIndices[idx]}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      savedQuestionIndices[idx]
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-700/60'
+                    }`}
+                    title={savedQuestionIndices[idx] ? 'Saved to Question Bank' : 'Save Question to Bank'}
+                  >
+                    {savingQuestionIndices[idx] ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Bookmark className={`w-3.5 h-3.5 ${savedQuestionIndices[idx] ? 'fill-emerald-400 text-emerald-400' : ''}`} />
+                    )}
+                    <span>{savedQuestionIndices[idx] ? 'Saved' : 'Save MCQ'}</span>
+                  </button>
                 </div>
                 <h2 className="text-base sm:text-lg font-bold text-white leading-relaxed">
                   {q.question}
@@ -738,9 +1014,14 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                     <p className="text-slate-300 text-sm leading-relaxed">{q.explanation}</p>
                   </div>
 
-                  {/* Wrong Answer Analysis */}
+                  {/* Wrong Answer Analysis & Auto-Save Badge */}
                   {userAnswers[idx] !== q.correctAnswer && (
                     <div className="space-y-3">
+                      <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>This mistake was automatically added to your <strong>Mistake Book</strong> for SRS revision.</span>
+                      </div>
+
                       <button
                         onClick={() => {
                           setSelectedQuestionForAnalysis(idx);
@@ -810,7 +1091,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 transition-all"
                           >
                             <Bookmark className="w-4 h-4" />
-                            <span>Add to Mistake Vault</span>
+                            <span>Saved in Mistake Book</span>
                           </button>
                         </div>
                       )}
@@ -827,6 +1108,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
               onClick={() => {
                 setShowResults(true);
                 saveQuizAttempt();
+                autoSaveMistakesToVault();
               }}
               disabled={Object.keys(userAnswers).length < generatedQuestions.length}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -843,20 +1125,81 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         <div className="space-y-6 max-w-3xl mx-auto">
           {/* Score Summary */}
           <div className="bg-slate-900/90 p-6 sm:p-8 rounded-2xl border border-slate-800 shadow-xl space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-white">Quiz Complete!</h2>
                 <p className="text-slate-400 mt-2">
                   {calculateScore().correct} out of {calculateScore().total} correct ({calculateScore().percentage}%)
                 </p>
               </div>
-              <button
-                onClick={resetQuiz}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all"
-              >
-                <RotateCcw className="w-4 h-4" />
-                New Quiz
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => saveQuizToFirestore()}
+                  disabled={isSaving}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    savedQuizId
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                  }`}
+                  title="Save entire quiz to My AI Quizzes"
+                >
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : savedQuizId ? (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>{savedQuizId ? 'Quiz Saved' : 'Save Quiz'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveAllQuestions}
+                  disabled={isSavingAll}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    savedAll
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                  }`}
+                  title="Save all MCQs into your Custom Question Bank"
+                >
+                  {isSavingAll ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Bookmark className={`w-4 h-4 ${savedAll ? 'fill-indigo-400 text-indigo-400' : ''}`} />
+                  )}
+                  <span>{savedAll ? 'All MCQs Saved' : 'Save All MCQs'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyQuiz}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-all"
+                  title="Copy questions, options and explanations"
+                >
+                  {copiedQuiz ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy Quiz</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={resetQuiz}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-indigo-500/20 transition-all"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>New Quiz</span>
+                </button>
+              </div>
             </div>
 
             {/* Deep AI Insights Button */}

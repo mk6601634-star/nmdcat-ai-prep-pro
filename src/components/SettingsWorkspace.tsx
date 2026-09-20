@@ -88,6 +88,7 @@ export const SettingsWorkspace: React.FC<SettingsWorkspaceProps> = ({
       <div className="flex items-center gap-2 pb-2 border-b border-slate-800/80 overflow-x-auto no-scrollbar">
         {[
           { id: 'profile', label: 'Profile & Exam Date', icon: User },
+          { id: 'admin', label: 'Admin CMS Portal', icon: ShieldCheck },
           { id: 'downloads', label: 'Downloads', icon: Download },
           { id: 'offline_content', label: 'Offline Content', icon: WifiOff },
           { id: 'preferences', label: 'Preferences', icon: SlidersIcon },

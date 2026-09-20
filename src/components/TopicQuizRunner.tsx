@@ -58,13 +58,30 @@ export const TopicQuizRunner: React.FC<TopicQuizRunnerProps> = ({ questions, sou
       userAnswers
     };
 
-    // persist attempt if user logged in
+    // persist attempt and wrong mistakes if user logged in
     try {
       if (authInstance?.currentUser?.uid) {
         await saveExamAttemptToFirestore(authInstance.currentUser.uid, attempt);
+        
+        // Auto-save wrong answers to Mistake Vault
+        for (let i = 0; i < questions.length; i++) {
+          const q = questions[i];
+          const userAns = userAnswers[i];
+          if (userAns !== undefined && userAns !== q.correctIndex) {
+            await saveMistakeToFirestore(authInstance.currentUser.uid, {
+              questionId: q.id || `topic_mistake_${Date.now()}_${i}`,
+              question: q,
+              wrongAnswerIndex: userAns,
+              dateAdded: new Date().toISOString(),
+              notes: `Auto-saved from Topic Quiz: ${meta.topic}`,
+              isResolved: false,
+              errorPattern: 'Conceptual Gap'
+            });
+          }
+        }
       }
     } catch (e) {
-      // ignore save errors for now
+      // ignore save errors
     }
   };
 

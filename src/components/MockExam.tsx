@@ -140,6 +140,30 @@ export const MockExam: React.FC<MockExamProps> = ({
     };
 
     setExamHistory(prev => [newAttempt, ...prev]);
+
+    // Auto-save wrong answers to Mistake Vault / Mistake Book
+    const newMistakes: SavedMistake[] = [];
+    examQuestions.forEach((q, idx) => {
+      const chosen = userAnswers[idx];
+      if (chosen !== undefined && chosen !== q.correctIndex) {
+        const exists = savedMistakes.some(m => m.questionId === q.id || m.question.question === q.question);
+        if (!exists) {
+          newMistakes.push({
+            questionId: q.id || `mock_${Date.now()}_${idx}`,
+            question: q,
+            wrongAnswerIndex: chosen,
+            dateAdded: new Date().toISOString(),
+            notes: 'Auto-saved from Mock Exam',
+            isResolved: false,
+            errorPattern: 'Conceptual Gap'
+          });
+        }
+      }
+    });
+
+    if (newMistakes.length > 0) {
+      setSavedMistakes(prev => [...newMistakes, ...prev]);
+    }
   };
 
   const handleSaveToMistakeVault = (q: MCQQuestion, wrongIdx: number) => {

@@ -169,29 +169,62 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Universal Search Bar Trigger */}
-      <div className="flex-1 max-w-xl mx-2 hidden sm:block">
+      {/* Quick Navigation Pills & Universal Search Bar Trigger */}
+      <div className="flex-1 max-w-2xl mx-2 hidden sm:flex items-center gap-2">
         <button
           id="universal-search-trigger"
           onClick={onOpenSearch}
-          className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs transition-all shadow-inner group ${
+          className={`flex-1 flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs transition-all shadow-inner group ${
             isDarkMode
-              ? 'bg-slate-950/70 border-slate-800 hover:border-cyan-500/50 text-slate-400 hover:text-slate-200'
-              : 'bg-slate-100/80 border-slate-300 hover:border-cyan-500 text-slate-600 hover:text-slate-900'
+              ? 'bg-slate-950/70 border-slate-800 hover:border-emerald-500/50 text-slate-400 hover:text-slate-200'
+              : 'bg-slate-100/80 border-slate-300 hover:border-emerald-500 text-slate-600 hover:text-slate-900'
           }`}
         >
           <div className="flex items-center gap-2.5">
             <Search className={`w-4 h-4 transition-colors ${
               isDarkMode ? 'text-slate-500 group-hover:text-emerald-400' : 'text-slate-400 group-hover:text-emerald-600'
             }`} />
-            <span>Search topics, questions, notes, formulas...</span>
+            <span className="truncate">Search topics, questions, formulas...</span>
           </div>
-          <kbd className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border shadow-sm ${
+          <kbd className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border shadow-sm shrink-0 ${
             isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-200 text-slate-700 border-slate-300'
           }`}>
             Ctrl K
           </kbd>
         </button>
+
+        {/* Quick Nav Action Shortcuts */}
+        {onNavigateToTab && (
+          <div className="hidden xl:flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => onNavigateToTab('simple_ai_quiz')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all"
+              title="Quick jump to AI Quiz Generator"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>AI Quiz</span>
+            </button>
+            <button
+              onClick={() => onNavigateToTab('practice')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all"
+              title="Quick jump to Practice Studio"
+            >
+              <span>🎯 Practice</span>
+            </button>
+            <button
+              onClick={() => onNavigateToTab('review')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold transition-all"
+              title="Quick jump to Mistake Book"
+            >
+              <span>📖 Mistakes</span>
+              {savedMistakes.length > 0 && (
+                <span className="px-1 py-0.2 rounded-full bg-rose-500/30 text-rose-200 text-[10px] font-bold">
+                  {savedMistakes.length}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Mobile Search Icon Button */}
@@ -390,6 +423,21 @@ export const TopBar: React.FC<TopBarProps> = ({
                 >
                   <User className="w-4 h-4 text-emerald-500" />
                   <span>View Profile & Settings</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    if (onNavigateToTab) onNavigateToTab('admin');
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between font-semibold ${
+                    isDarkMode ? 'text-cyan-300 hover:text-cyan-200 hover:bg-cyan-950/30' : 'text-cyan-700 hover:text-cyan-900 hover:bg-cyan-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                    <span>Admin Portal & CMS</span>
+                  </div>
+                  <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-mono font-bold">CMS</span>
                 </button>
                 {isFirebaseAuthenticated && onSignOut && (
                   <button

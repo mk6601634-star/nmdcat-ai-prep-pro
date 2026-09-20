@@ -579,6 +579,65 @@ export async function stageAiGeneratedQuestions(
 }
 
 /**
+ * Bulk create or import MCQs into Firestore with chunked batches (max 400 per batch)
+ */
+export async function bulkCreateAdminMcqs(
+  questions: Array<MCQQuestion & { status?: AdminContentStatus }>,
+  createdBy: string,
+  targetStatus: AdminContentStatus = 'PUBLISHED',
+  chunkSize = 400
+): Promise<{ success: boolean; count: number; failedChunks?: number[]; errors?: string[] }> {
+  if (!questions || questions.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const timestamp = timestampValue();
+  let totalSaved = 0;
+  const failedChunks: number[] = [];
+  const errors: string[] = [];
+
+  for (let i = 0; i < questions.length; i += chunkSize) {
+    const chunkIndex = Math.floor(i / chunkSize);
+    const chunk = questions.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+
+    chunk.forEach((q) => {
+      const docRef = q.id ? doc(db, adminCollections.mcqs, q.id) : doc(collection(db, adminCollections.mcqs));
+      batch.set(docRef, {
+        ...q,
+        id: docRef.id,
+        status: q.status || targetStatus,
+        verificationStatus: (q.status || targetStatus) === 'PUBLISHED' ? 'VERIFIED' : 'AI_GENERATED',
+        authorType: q.authorType || 'IMPORTED',
+        version: q.version || 1,
+        createdBy: q.createdBy || createdBy,
+        updatedBy: createdBy,
+        updatedAt: timestamp,
+        createdAt: q.createdAt || timestamp,
+        publishedAt: (q.status || targetStatus) === 'PUBLISHED' ? (q.publishedAt || timestamp) : undefined,
+        publishedBy: (q.status || targetStatus) === 'PUBLISHED' ? (q.publishedBy || createdBy) : undefined
+      }, { merge: true });
+    });
+
+    try {
+      await batch.commit();
+      totalSaved += chunk.length;
+    } catch (err: any) {
+      handleError(`Error bulk importing MCQs chunk ${chunkIndex}:`, err);
+      failedChunks.push(chunkIndex);
+      errors.push(err?.message || `Chunk ${chunkIndex} failed`);
+    }
+  }
+
+  return {
+    success: failedChunks.length === 0,
+    count: totalSaved,
+    failedChunks: failedChunks.length > 0 ? failedChunks : undefined,
+    errors: errors.length > 0 ? errors : undefined
+  };
+}
+
+/**
  * Resumable Import Job Management
  */
 export async function createImportJob(job: Omit<ImportJob, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {

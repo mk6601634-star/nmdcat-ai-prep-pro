@@ -104,7 +104,8 @@ import {
   createAuditLog,
   subscribeToAuditLogs,
   subscribeToSyllabusMappings,
-  syncFirestoreNow
+  syncFirestoreNow,
+  bulkCreateAdminMcqs
 } from '../lib/firestoreService';
 import { AutomatedMcqValidatorSuite } from './AutomatedMcqValidatorSuite';
 import { User } from '../lib/firebase';
@@ -351,6 +352,265 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
   
   // Staging Review Queue State
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([]);
+
+  // Bulk CSV / JSON Question Import State
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState<boolean>(false);
+  const [bulkInputMode, setBulkInputMode] = useState<'csv' | 'json'>('csv');
+  const [bulkInputText, setBulkInputText] = useState<string>('');
+  const [bulkImportTarget, setBulkImportTarget] = useState<'publish' | 'staging'>('publish');
+  const [bulkImportStatus, setBulkImportStatus] = useState<{ loading: boolean; message: string; success?: boolean }>({ loading: false, message: '' });
+
+  // Parse CSV text to MCQ objects
+  const parseCsvToQuestions = (csvText: string): MCQQuestion[] => {
+    // Strip BOM if present
+    const cleanCsv = csvText.charCodeAt(0) === 0xFEFF ? csvText.slice(1) : csvText;
+    const lines: string[] = [];
+    let currentLine = '';
+    let insideQuotes = false;
+    
+    for (let i = 0; i < cleanCsv.length; i++) {
+      const char = cleanCsv[i];
+      if (char === '"') {
+        insideQuotes = !insideQuotes;
+        currentLine += char;
+      } else if ((char === '\n' || char === '\r') && !insideQuotes) {
+        if (currentLine.trim()) lines.push(currentLine.trim());
+        currentLine = '';
+      } else {
+        currentLine += char;
+      }
+    }
+    if (currentLine.trim()) lines.push(currentLine.trim());
+    if (lines.length < 2) return [];
+
+    const parseRow = (row: string) => {
+      const cells: string[] = [];
+      let currentCell = '';
+      let inQuotes = false;
+      for (let i = 0; i < row.length; i++) {
+        const c = row[i];
+        if (c === '"') {
+          inQuotes = !inQuotes;
+        } else if (c === ',' && !inQuotes) {
+          cells.push(currentCell.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+          currentCell = '';
+        } else {
+          currentCell += c;
+        }
+      }
+      cells.push(currentCell.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+      return cells;
+    };
+
+    const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const questions: MCQQuestion[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseRow(lines[i]);
+      if (row.length < 5) continue;
+      const rowMap: Record<string, string> = {};
+      headers.forEach((h, idx) => {
+        rowMap[h] = row[idx] || '';
+      });
+
+      const question = rowMap['question'] || rowMap['questiontext'] || rowMap['q'] || '';
+      const optA = rowMap['optiona'] || rowMap['opta'] || rowMap['option1'] || rowMap['a'] || '';
+      const optB = rowMap['optionb'] || rowMap['optb'] || rowMap['option2'] || rowMap['b'] || '';
+      const optC = rowMap['optionc'] || rowMap['optc'] || rowMap['option3'] || rowMap['c'] || '';
+      const optD = rowMap['optiond'] || rowMap['optd'] || rowMap['option4'] || rowMap['d'] || '';
+      const ans = (rowMap['correctanswer'] || rowMap['correctindex'] || rowMap['answer'] || rowMap['ans'] || 'A').toUpperCase().trim();
+      
+      let correctIndex = 0;
+      if (ans === 'B' || ans === '1') correctIndex = 1;
+      else if (ans === 'C' || ans === '2') correctIndex = 2;
+      else if (ans === 'D' || ans === '3') correctIndex = 3;
+
+      let subject = (rowMap['subject'] as any) || 'Biology';
+      if (subject === 'Mathematics') subject = 'Physics';
+
+      const mcqId = rowMap['mcqid'] || rowMap['id'] || `bulk_csv_${Date.now()}_${i}`;
+
+      if (question && optA && optB) {
+        questions.push({
+          id: mcqId,
+          subject: subject,
+          chapter: rowMap['chapter'] || rowMap['unit'] || 'General Chapter',
+          topic: rowMap['topic'] || rowMap['chapter'] || 'General Topic',
+          question,
+          options: [optA, optB, optC || 'Option C', optD || 'Option D'],
+          correctIndex,
+          explanation: rowMap['explanation'] || rowMap['reason'] || `Verified PMDC ${subject} standard answer.`,
+          difficulty: (rowMap['difficulty'] as any) || 'Medium',
+          type: 'Standard',
+          status: 'PUBLISHED',
+          verificationStatus: 'VERIFIED',
+          authorType: 'IMPORTED'
+        });
+      }
+    }
+
+    return questions;
+  };
+
+  // Parse JSON text to MCQ objects
+  const parseJsonToQuestions = (jsonText: string): MCQQuestion[] => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      const rawList = Array.isArray(parsed) ? parsed : (parsed.questions || parsed.mcqs || parsed.items || []);
+      if (!Array.isArray(rawList)) return [];
+
+      return rawList.map((q: any, idx: number) => {
+        let options: [string, string, string, string] = ['A', 'B', 'C', 'D'];
+        if (Array.isArray(q.options) && q.options.length >= 2) {
+          options = [
+            String(q.options[0] || 'A'),
+            String(q.options[1] || 'B'),
+            String(q.options[2] || 'C'),
+            String(q.options[3] || 'D')
+          ];
+        } else if (q.options && typeof q.options === 'object') {
+          options = [
+            String(q.options.A || q.options.a || 'A'),
+            String(q.options.B || q.options.b || 'B'),
+            String(q.options.C || q.options.c || 'C'),
+            String(q.options.D || q.options.d || 'D')
+          ];
+        }
+
+        let correctIndex = 0;
+        if (typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex <= 3) {
+          correctIndex = q.correctIndex;
+        } else if (typeof q.correctAnswer === 'string') {
+          const ca = q.correctAnswer.toUpperCase();
+          if (ca === 'B' || ca === '1') correctIndex = 1;
+          else if (ca === 'C' || ca === '2') correctIndex = 2;
+          else if (ca === 'D' || ca === '3') correctIndex = 3;
+        }
+
+        return {
+          id: q.id || `bulk_json_${Date.now()}_${idx}`,
+          subject: (q.subject as SubjectType) || 'Biology',
+          chapter: q.chapter || 'General Chapter',
+          topic: q.topic || q.chapter || 'General Topic',
+          question: q.question || 'Question',
+          options,
+          correctIndex,
+          explanation: q.explanation || 'Verified PMDC explanation.',
+          difficulty: q.difficulty || 'Medium',
+          type: q.type || 'Standard'
+        };
+      }).filter(q => q.question && q.options[0] && q.options[1]);
+    } catch {
+      return [];
+    }
+  };
+
+  const parsedBulkQuestions = useMemo(() => {
+    if (!bulkInputText.trim()) return [];
+    if (bulkInputMode === 'csv') return parseCsvToQuestions(bulkInputText);
+    return parseJsonToQuestions(bulkInputText);
+  }, [bulkInputText, bulkInputMode]);
+
+  const handleDownloadSampleCsv = () => {
+    const sampleCsv = `subject,chapter,topic,question,optionA,optionB,optionC,optionD,correctAnswer,explanation,difficulty
+Biology,Cell Structure,Fluid Mosaic Model,Which component regulates the fluidity of the cell membrane at variable temperatures?,Phospholipids,Cholesterol,Glycoproteins,Integral proteins,B,Cholesterol acts as a fluidity buffer preventing membranes from solidifying at lower temps or becoming too fluid at higher temps.,Medium
+Chemistry,Thermochemistry,Enthalpy,The standard enthalpy of formation of an element in its standard state is:,Zero,Positive,Negative,Variable,A,By IUPAC convention standard enthalpy of formation of elements in standard state is defined as exactly 0 kJ/mol.,Easy
+Physics,Circular Motion,Centripetal Force,When a body moves along a circular path with constant speed its acceleration is:,Zero,Directed tangentially,Directed towards the center,Directed away from center,C,Uniform circular motion experiences centripetal acceleration directed radially inward toward the center.,Medium`;
+    const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'NMDCAT_Sample_MCQ_Template.csv';
+    a.click();
+  };
+
+  const handleDownloadSampleJson = () => {
+    const sampleJson = [
+      {
+        "subject": "Biology",
+        "chapter": "Cell Structure",
+        "topic": "Cell Membrane",
+        "question": "Which model explains the dynamic mosaic nature of biological membranes?",
+        "options": ["Fluid Mosaic Model", "Unit Membrane Model", "Lamellar Model", "Micellar Model"],
+        "correctIndex": 0,
+        "explanation": "Proposed by Singer and Nicolson in 1972.",
+        "difficulty": "Easy"
+      },
+      {
+        "subject": "Chemistry",
+        "chapter": "Chemical Bonding",
+        "topic": "VSEPR Theory",
+        "question": "What is the geometry of a methane (CH4) molecule according to VSEPR theory?",
+        "options": ["Trigonal Planar", "Tetrahedral", "Linear", "Bent"],
+        "correctIndex": 1,
+        "explanation": "Carbon in CH4 has 4 bond pairs and 0 lone pairs resulting in a regular tetrahedral shape (109.5° bond angle).",
+        "difficulty": "Medium"
+      }
+    ];
+    const blob = new Blob([JSON.stringify(sampleJson, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'NMDCAT_Sample_MCQ_Template.json';
+    a.click();
+  };
+
+  const handleExecuteBulkImport = async () => {
+    if (parsedBulkQuestions.length === 0) {
+      alert('No valid questions found to import. Please check your CSV or JSON format.');
+      return;
+    }
+
+    setBulkImportStatus({ loading: true, message: `Importing ${parsedBulkQuestions.length} questions to ${bulkImportTarget === 'publish' ? 'Live Master Question Bank' : 'Staging Review Queue'}...` });
+
+    try {
+      let importedCount = 0;
+      const adminEmail = authenticatedAdmin?.email || 'system@admin.nmdcat';
+
+      if (bulkImportTarget === 'publish') {
+        const result = await bulkCreateAdminMcqs(parsedBulkQuestions, adminEmail, 'PUBLISHED', 400);
+        importedCount = result.count;
+      } else {
+        for (const q of parsedBulkQuestions) {
+          await createReviewQueueItem({
+            itemRef: q.id || `bulk_${Date.now()}_${importedCount}`,
+            itemType: 'AI_STAGING',
+            status: 'OPEN',
+            assignedReviewer: authenticatedAdmin?.name || 'Bulk Import Admin',
+            priority: 'Medium',
+            sourceTitle: `Bulk ${bulkInputMode.toUpperCase()} Import`,
+            qualityScore: 90,
+            validationNotes: `Imported via Bulk ${bulkInputMode.toUpperCase()} uploader.`,
+            question: q,
+            createdBy: adminEmail,
+            notes: 'Bulk uploaded item pending review',
+            actionHistory: [{ actor: adminEmail, action: 'Bulk Uploaded', timestamp: new Date().toISOString() }],
+            payload: { question: q, qualityScore: 90, validationNotes: 'Bulk uploaded' }
+          });
+          importedCount++;
+        }
+      }
+
+      await createAuditLog({
+        actionType: 'IMPORT',
+        targetCollection: bulkImportTarget === 'publish' ? 'mcqs' : 'reviewQueue',
+        targetId: `batch_${Date.now()}`,
+        targetType: 'MCQ',
+        summary: `Bulk imported ${importedCount} MCQs via ${bulkInputMode.toUpperCase()}`,
+        details: `Target: ${bulkImportTarget === 'publish' ? 'Live Master Repository' : 'Review Queue'}`,
+        createdBy: adminEmail
+      });
+
+      setBulkImportStatus({ loading: false, message: `Successfully imported all ${importedCount} questions!`, success: true });
+      setTimeout(() => {
+        setBulkInputText('');
+        setIsBulkImportOpen(false);
+        setBulkImportStatus({ loading: false, message: '' });
+      }, 1500);
+    } catch (err: any) {
+      setBulkImportStatus({ loading: false, message: `Import error: ${err.message}`, success: false });
+    }
+  };
 
   // Handlers
   const handleCreateMcq = async (e: React.FormEvent) => {
@@ -907,9 +1167,20 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
           {activeTab === 'mcq_manager' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
               <div className="bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-800 space-y-4">
-                <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-cyan-300" />
-                </h3>
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-cyan-300" />
+                    <span>Create Single Question</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkImportOpen(true)}
+                    className="px-2.5 py-1 bg-gradient-to-r from-teal-500/20 to-cyan-500/20 hover:from-teal-500/30 hover:to-cyan-500/30 text-cyan-300 font-bold text-xs rounded-xl border border-cyan-500/30 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Bulk CSV / JSON</span>
+                  </button>
+                </div>
 
                 <form onSubmit={handleCreateMcq} className="space-y-3 text-xs">
                   <div>
@@ -1866,9 +2137,26 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
                       setIsSyncingFirestore(false);
                       alert(success ? 'Cloud Firestore collections synchronized successfully!' : 'Firestore sync failed. Check console for details.');
                     }}
-                    className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg"
+                    className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg cursor-pointer"
                   >
                     {isSyncingFirestore ? 'Syncing...' : 'Sync Firestore Now'}
+                  </button>
+                </div>
+
+                <div className="p-4 bg-slate-950 rounded-2xl border border-teal-500/30 space-y-3 md:col-span-2">
+                  <div className="flex items-center gap-2 text-teal-400">
+                    <FileSpreadsheet className="w-5 h-5" />
+                    <span className="font-bold text-white text-sm">Bulk MCQ Addition (CSV / JSON)</span>
+                  </div>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    Quickly batch import dozens or hundreds of verified PMDC Multiple Choice Questions into the live repository or staging review queue with syntax verification and format auto-detection.
+                  </p>
+                  <button
+                    onClick={() => setIsBulkImportOpen(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg transition-all cursor-pointer"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Open Bulk CSV / JSON Uploader</span>
                   </button>
                 </div>
               </div>
@@ -1884,6 +2172,211 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
           )}
         </main>
       </div>
+
+      {/* BULK CSV / JSON IMPORT MODAL */}
+      {isBulkImportOpen && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 w-full max-w-3xl rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5 text-xs animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500 to-cyan-400 flex items-center justify-center text-slate-950 shadow-md shrink-0">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-white">Bulk Question Import (CSV & JSON)</h3>
+                  <p className="text-slate-400 text-[11px]">Upload spreadsheets or structured JSON to batch populate the PMDC Question Bank.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBulkImportOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode & Target Controls */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-semibold text-[11px]">Format:</span>
+                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setBulkInputMode('csv')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      bulkInputMode === 'csv' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    CSV Spreadsheet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkInputMode('json')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      bulkInputMode === 'json' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    JSON Array
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-slate-400 font-semibold text-[11px]">Destination:</span>
+                <select
+                  value={bulkImportTarget}
+                  onChange={(e) => setBulkImportTarget(e.target.value as any)}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1 text-cyan-300 font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="publish">Direct Publish (Live App)</option>
+                  <option value="staging">Staging Review Queue</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Template Download Shortcuts */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <span className="text-slate-400 text-[11px]">Need a formatted template?</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleCsv}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-[11px]"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Sample CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleJson}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-[11px]"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Sample JSON</span>
+                </button>
+              </div>
+            </div>
+
+            {/* File Upload / Dropzone or Text Area */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-300 font-bold block">
+                  Paste {bulkInputMode.toUpperCase()} Data or Choose File
+                </label>
+                <label className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-[11px] cursor-pointer flex items-center gap-1.5 transition-all">
+                  <FileUp className="w-3.5 h-3.5" />
+                  <span>Upload .{bulkInputMode} File</span>
+                  <input
+                    type="file"
+                    accept={bulkInputMode === 'csv' ? '.csv,text/csv' : '.json,application/json'}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const content = event.target?.result as string;
+                        if (content) setBulkInputText(content);
+                      };
+                      reader.readAsText(file);
+                    }}
+                  />
+                </label>
+              </div>
+
+              <textarea
+                rows={6}
+                value={bulkInputText}
+                onChange={(e) => setBulkInputText(e.target.value)}
+                placeholder={bulkInputMode === 'csv'
+                  ? `subject,chapter,topic,question,optionA,optionB,optionC,optionD,correctAnswer,explanation,difficulty\nBiology,Cell Biology,Membrane,Which lipid provides fluidity?,Phospholipid,Cholesterol,Glycolipid,Triglyceride,B,Cholesterol buffers fluidity,Medium`
+                  : `[\n  {\n    "subject": "Biology",\n    "chapter": "Cell Biology",\n    "question": "Sample question text?",\n    "options": ["A", "B", "C", "D"],\n    "correctIndex": 0,\n    "explanation": "Scientific explanation"\n  }\n]`}
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-3 text-white font-mono text-[11px] focus:outline-none focus:border-cyan-500 leading-relaxed custom-scrollbar"
+              />
+            </div>
+
+            {/* Validation & Live Preview Summary */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-300 flex items-center gap-2">
+                  <CheckCircle2 className={`w-4 h-4 ${parsedBulkQuestions.length > 0 ? 'text-emerald-400' : 'text-slate-600'}`} />
+                  <span>Detected Valid Questions:</span>
+                </span>
+                <span className={`font-mono font-bold px-2.5 py-0.5 rounded-full text-xs ${
+                  parsedBulkQuestions.length > 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-500'
+                }`}>
+                  {parsedBulkQuestions.length} Questions Ready
+                </span>
+              </div>
+
+              {parsedBulkQuestions.length > 0 && (
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pt-2 border-t border-slate-800/80 custom-scrollbar">
+                  {parsedBulkQuestions.slice(0, 5).map((q, idx) => (
+                    <div key={idx} className="p-2 bg-slate-900 rounded-xl border border-slate-800 text-[11px] flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1 truncate">
+                        <span className="font-bold text-cyan-300 mr-2">[{q.subject}]</span>
+                        <span className="text-slate-200 truncate">{q.question}</span>
+                      </div>
+                      <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded font-mono text-emerald-400 shrink-0">
+                        Ans: {String.fromCharCode(65 + q.correctIndex)}
+                      </span>
+                    </div>
+                  ))}
+                  {parsedBulkQuestions.length > 5 && (
+                    <p className="text-[10px] text-slate-500 italic text-center pt-1">
+                      ...and {parsedBulkQuestions.length - 5} more questions
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {bulkImportStatus.message && (
+                <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                  bulkImportStatus.success ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                }`}>
+                  {bulkImportStatus.message}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsBulkImportOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={parsedBulkQuestions.length === 0 || bulkImportStatus.loading}
+                onClick={handleExecuteBulkImport}
+                className={`px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer ${
+                  parsedBulkQuestions.length > 0 && !bulkImportStatus.loading
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {bulkImportStatus.loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Importing...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Import {parsedBulkQuestions.length} Questions</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

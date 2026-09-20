@@ -57,19 +57,26 @@ export interface NavCategory {
 
 export const NAV_CATEGORIES: NavCategory[] = [
   {
-    id: 'study_flow',
-    label: 'STUDY FLOW',
+    id: 'study_core',
+    label: 'STUDY CORE',
     icon: Home,
     items: [
       { id: 'home', label: 'Home', icon: LayoutDashboard, badge: 'Today', badgeColor: 'bg-emerald-500/20 text-emerald-400 font-bold' },
-      { id: 'learn', label: 'Learn', icon: BookOpen, badge: 'Core', badgeColor: 'bg-indigo-500/20 text-indigo-300 font-bold' },
-      { id: 'practice', label: 'Practice', icon: PenTool, badge: 'MCQs', badgeColor: 'bg-amber-500/20 text-amber-300' },
-      { id: 'simple_ai_quiz', label: 'AI Quiz Generator', icon: Sparkles, badge: 'AI', badgeColor: 'bg-indigo-500/20 text-indigo-300' },
+      { id: 'simple_ai_quiz', label: 'AI Quiz Generator', icon: Sparkles, badge: '⚡ AI', badgeColor: 'bg-indigo-500/20 text-indigo-300 font-bold' },
+      { id: 'practice', label: 'Practice Studio', icon: PenTool, badge: 'MCQs', badgeColor: 'bg-amber-500/20 text-amber-300 font-semibold' },
+      { id: 'review', label: 'Mistake Book', icon: RotateCcw, badge: 'SRS', badgeColor: 'bg-rose-500/20 text-rose-300 font-semibold' },
+      { id: 'learn', label: 'Learn & Syllabus', icon: BookOpen, badge: 'PMDC', badgeColor: 'bg-teal-500/20 text-teal-300 font-semibold' }
+    ]
+  },
+  {
+    id: 'engine_and_resources',
+    label: 'RESOURCES & AI',
+    icon: Library,
+    items: [
       { id: 'prism', label: 'PRISM Engine', icon: ShieldCheck, badge: 'Verified', badgeColor: 'bg-cyan-500/20 text-cyan-300 font-bold' },
-      { id: 'review', label: 'Review', icon: RotateCcw, badge: 'SRS', badgeColor: 'bg-rose-500/20 text-rose-300' },
-      { id: 'progress', label: 'Progress', icon: BarChart3, badge: 'Stats', badgeColor: 'bg-sky-500/20 text-sky-300' },
-      { id: 'resources', label: 'Resources', icon: Library, badge: 'Library', badgeColor: 'bg-violet-500/20 text-violet-300' },
-      { id: 'ai', label: 'AI Workspace', icon: Bot, badge: 'AI', badgeColor: 'bg-fuchsia-500/20 text-fuchsia-300' }
+      { id: 'resources', label: 'Resource Hub', icon: Library, badge: 'Notes', badgeColor: 'bg-violet-500/20 text-violet-300' },
+      { id: 'progress', label: 'Progress & Analytics', icon: BarChart3, badge: 'Stats', badgeColor: 'bg-sky-500/20 text-sky-300' },
+      { id: 'ai', label: 'AI Workspace', icon: Bot, badge: 'Tutor', badgeColor: 'bg-fuchsia-500/20 text-fuchsia-300' }
     ]
   },
   {
@@ -77,7 +84,7 @@ export const NAV_CATEGORIES: NavCategory[] = [
     label: 'ACCOUNT',
     icon: Settings,
     items: [
-      { id: 'settings', label: 'Settings', icon: Settings },
+      { id: 'settings', label: 'Settings & Profile', icon: Settings },
       { id: 'admin', label: 'Admin Portal', icon: ShieldCheck, badge: 'CMS', badgeColor: 'bg-emerald-500/20 text-emerald-400 font-bold' }
     ]
   }
@@ -107,10 +114,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return name.slice(0, 2).toUpperCase() || 'MK';
   };
   const userInitials = getInitials(userName);
+
   // Category expansion states
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({
-    settings: false
-  });
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   const toggleCategory = (catId: string) => {
     setCollapsedCategories(prev => ({
@@ -120,8 +126,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleItemClick = (itemId: string) => {
-    setActiveTab(itemId);
+    // Standardize home to dashboard or itemId
+    setActiveTab(itemId === 'home' ? 'dashboard' : itemId);
     setIsMobileOpen(false);
+  };
+
+  const isItemActive = (itemId: string) => {
+    if (itemId === activeTab) return true;
+    if (itemId === 'home' && (activeTab === 'dashboard' || activeTab === 'continue_learning' || activeTab === 'todays_plan')) return true;
+    if (itemId === 'learn' && ['sequential_practice', 'study_plan', 'learning_paths', 'ai_tutor', 'aitutor'].includes(activeTab)) return true;
+    if (itemId === 'practice' && ['quick_practice', 'custom_builder', 'mock_exams', 'past_papers', 'challenge_mode', 'mock'].includes(activeTab)) return true;
+    if (itemId === 'review' && ['mistake_book', 'weak_topics', 'bookmarks', 'srs_review', 'incorrect_qs', 'revision_queue', 'mistakes', 'srs', 'adaptive'].includes(activeTab)) return true;
+    if (itemId === 'resources' && ['notes', 'flashcards', 'formula_lib', 'reaction_lib', 'definitions', 'mind_maps', 'mnemonics', 'knowledge_graph', 'vault'].includes(activeTab)) return true;
+    if (itemId === 'progress' && ['performance_dash', 'subject_analytics', 'achievements', 'study_streak', 'ai_insights', 'rewards', 'ecosystem', 'productivity'].includes(activeTab)) return true;
+    if (itemId === 'ai' && ['ai_chat', 'ai_strategy', 'ai_recommendations', 'ai_question_gen', 'ai_study_planner', 'advanced_ai', 'studio'].includes(activeTab)) return true;
+    if (itemId === 'settings' && ['profile', 'downloads', 'offline_content', 'preferences', 'help', 'feedback', 'logout', 'content_pipeline'].includes(activeTab)) return true;
+    return false;
   };
 
   return (
@@ -217,7 +237,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="space-y-0.5">
                     {category.items.map(item => {
                       const Icon = item.icon;
-                      const isActive = activeTab === item.id;
+                      const isActive = isItemActive(item.id);
+                      const badgeText = item.id === 'review' && savedMistakes.length > 0 
+                        ? `${savedMistakes.length}` 
+                        : item.badge;
 
                       return (
                         <button
@@ -245,9 +268,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           {!isCollapsed && (
                             <div className="flex-1 flex items-center justify-between truncate">
                               <span className="truncate">{item.label}</span>
-                              {item.badge && (
-                                <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-semibold shrink-0 ml-1 ${item.badgeColor || 'bg-slate-800 text-slate-300'}`}>
-                                  {item.badge}
+                              {badgeText && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold shrink-0 ml-1 ${
+                                  item.id === 'review' && savedMistakes.length > 0
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    : (item.badgeColor || 'bg-slate-800 text-slate-300')
+                                }`}>
+                                  {badgeText}
                                 </span>
                               )}
                             </div>

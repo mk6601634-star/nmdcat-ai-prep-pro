@@ -149,6 +149,23 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
   const handleOptionSelect = (optionIndex: number) => {
     if (userAnswers[currentIndex] !== undefined) return; // Answered already
     setUserAnswers(prev => ({ ...prev, [currentIndex]: optionIndex }));
+
+    const currentQ = activeQuestions[currentIndex];
+    if (currentQ && optionIndex !== currentQ.correctIndex) {
+      const exists = savedMistakes.some(m => m.questionId === currentQ.id || m.question.question === currentQ.question);
+      if (!exists) {
+        const newMistake: SavedMistake = {
+          questionId: currentQ.id || `drill_${Date.now()}_${currentIndex}`,
+          question: currentQ,
+          wrongAnswerIndex: optionIndex,
+          dateAdded: new Date().toISOString(),
+          notes: 'Auto-saved from Practice Drill',
+          isResolved: false,
+          errorPattern: 'Conceptual Gap'
+        };
+        setSavedMistakes(prev => [newMistake, ...prev]);
+      }
+    }
   };
 
   const handleNextQuestion = () => {

@@ -1,22 +1,49 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Sidebar, NAV_CATEGORIES } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { RightSidebar } from './components/RightSidebar';
-import { UniversalSearchModal } from './components/UniversalSearchModal';
 import { QuickActionFAB } from './components/QuickActionFAB';
 import { BottomMobileNav } from './components/BottomMobileNav';
 
-import { Dashboard } from './components/Dashboard';
-import { LearnWorkspace } from './components/LearnWorkspace';
-import { PracticeWorkspace } from './components/PracticeWorkspace';
-import { ResourceWorkspace } from './components/ResourceWorkspace';
-import { ReviewWorkspace } from './components/ReviewWorkspace';
-import { InsightsWorkspace } from './components/InsightsWorkspace';
-import { AIWorkspace } from './components/AIWorkspace';
-import { SettingsWorkspace } from './components/SettingsWorkspace';
-import { AdminPlatformSuite } from './components/AdminPlatformSuite';
-import { SimpleAiQuizGenerator } from './components/SimpleAiQuizGenerator';
-import { PrismWorkspace } from './components/prism/PrismWorkspace';
+// Code-split heavy workspaces for lightning-fast initial load & snappy navigation
+const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const LearnWorkspace = lazy(() => import('./components/LearnWorkspace').then(m => ({ default: m.LearnWorkspace })));
+const PracticeWorkspace = lazy(() => import('./components/PracticeWorkspace').then(m => ({ default: m.PracticeWorkspace })));
+const ResourceWorkspace = lazy(() => import('./components/ResourceWorkspace').then(m => ({ default: m.ResourceWorkspace })));
+const ReviewWorkspace = lazy(() => import('./components/ReviewWorkspace').then(m => ({ default: m.ReviewWorkspace })));
+const InsightsWorkspace = lazy(() => import('./components/InsightsWorkspace').then(m => ({ default: m.InsightsWorkspace })));
+const AIWorkspace = lazy(() => import('./components/AIWorkspace').then(m => ({ default: m.AIWorkspace })));
+const SettingsWorkspace = lazy(() => import('./components/SettingsWorkspace').then(m => ({ default: m.SettingsWorkspace })));
+const AdminPlatformSuite = lazy(() => import('./components/AdminPlatformSuite').then(m => ({ default: m.AdminPlatformSuite })));
+const SimpleAiQuizGenerator = lazy(() => import('./components/SimpleAiQuizGenerator').then(m => ({ default: m.SimpleAiQuizGenerator })));
+const PrismWorkspace = lazy(() => import('./components/prism/PrismWorkspace').then(m => ({ default: m.PrismWorkspace })));
+const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModal').then(m => ({ default: m.UniversalSearchModal })));
+
+const WorkspaceLoadingSkeleton = () => (
+  <div className="w-full space-y-6 animate-pulse py-2">
+    <div className="h-32 bg-slate-900/60 rounded-3xl border border-slate-800/80 p-6 flex items-center justify-between shadow-xl">
+      <div className="space-y-3 w-1/2">
+        <div className="h-4 bg-slate-800 rounded-lg w-1/3" />
+        <div className="h-6 bg-slate-800/80 rounded-lg w-2/3" />
+      </div>
+      <div className="h-10 w-28 bg-slate-800 rounded-xl" />
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="h-48 bg-slate-900/50 rounded-2xl border border-slate-800/60 p-5 space-y-3">
+        <div className="h-4 bg-slate-800 rounded w-1/2" />
+        <div className="h-20 bg-slate-800/40 rounded-xl" />
+      </div>
+      <div className="h-48 bg-slate-900/50 rounded-2xl border border-slate-800/60 p-5 space-y-3">
+        <div className="h-4 bg-slate-800 rounded w-1/2" />
+        <div className="h-20 bg-slate-800/40 rounded-xl" />
+      </div>
+      <div className="h-48 bg-slate-900/50 rounded-2xl border border-slate-800/60 p-5 space-y-3">
+        <div className="h-4 bg-slate-800 rounded w-1/2" />
+        <div className="h-20 bg-slate-800/40 rounded-xl" />
+      </div>
+    </div>
+  </div>
+);
 
 import type { User } from './lib/firebase';
 
@@ -337,9 +364,13 @@ export default function App() {
     }
 
     const fallbackMap: Record<string, { category: string; title: string }> = {
+      home: { category: 'HOME', title: 'Dashboard' },
+      dashboard: { category: 'HOME', title: 'Dashboard' },
       learn: { category: 'LEARNING', title: 'Learn' },
       practice: { category: 'PRACTICE', title: 'Practice' },
-      review: { category: 'REVIEW', title: 'Review' },
+      review: { category: 'REVIEW', title: 'Mistake Book' },
+      mistake_book: { category: 'REVIEW', title: 'Mistake Book' },
+      mistake_vault: { category: 'REVIEW', title: 'Mistake Book' },
       progress: { category: 'PROGRESS', title: 'Progress' },
       ai: { category: 'AI WORKSPACE', title: 'AI Workspace' },
       resources: { category: 'RESOURCES', title: 'Resources' },
@@ -359,21 +390,24 @@ export default function App() {
 
   const currentTabInfo = getTabInfo(activeTab);
 
+  const isDashboard = ['dashboard', 'home', 'continue_learning', 'todays_plan', 'notifications'].includes(activeTab);
   const isLearnGroup = ['learn', 'sequential_practice', 'study_plan', 'learning_paths', 'ai_tutor', 'aitutor'].includes(activeTab);
   const isPracticeGroup = ['practice', 'quick_practice', 'custom_builder', 'mock_exams', 'past_papers', 'challenge_mode', 'mock'].includes(activeTab);
   const isResourceGroup = ['resources', 'notes', 'flashcards', 'formula_lib', 'reaction_lib', 'definitions', 'mind_maps', 'mnemonics', 'knowledge_graph', 'vault'].includes(activeTab);
-  const isReviewGroup = ['review', 'mistake_book', 'weak_topics', 'bookmarks', 'srs_review', 'incorrect_qs', 'revision_queue', 'mistakes', 'srs', 'adaptive'].includes(activeTab);
+  const isReviewGroup = ['review', 'mistake_book', 'mistake_vault', 'weak_topics', 'bookmarks', 'srs_review', 'incorrect_qs', 'revision_queue', 'mistakes', 'srs', 'adaptive'].includes(activeTab);
   const isInsightsGroup = ['progress', 'performance_dash', 'subject_analytics', 'achievements', 'study_streak', 'ai_insights', 'rewards', 'ecosystem', 'productivity'].includes(activeTab);
   const isAIGroup = ['ai', 'ai_chat', 'ai_strategy', 'ai_recommendations', 'ai_question_gen', 'ai_study_planner', 'advanced_ai', 'studio'].includes(activeTab);
   const isSettingsGroup = ['settings', 'profile', 'downloads', 'offline_content', 'preferences', 'help', 'feedback', 'logout', 'content_pipeline'].includes(activeTab);
 
   if (activeTab === 'admin' || activeTab === 'admin_suite') {
     return (
-      <AdminPlatformSuite
-        onReturnToStudentApp={() => setActiveTab('dashboard')}
-        currentUser={firebaseUser}
-        userName={userName}
-      />
+      <Suspense fallback={<WorkspaceLoadingSkeleton />}>
+        <AdminPlatformSuite
+          onReturnToStudentApp={() => setActiveTab('dashboard')}
+          currentUser={firebaseUser}
+          userName={userName}
+        />
+      </Suspense>
     );
   }
 
@@ -420,136 +454,138 @@ export default function App() {
 
         <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex gap-8">
           <main className="flex-1 min-w-0 pb-20 lg:pb-12">
-            {(activeTab === 'dashboard' || activeTab === 'continue_learning' || activeTab === 'todays_plan' || activeTab === 'notifications') && (
-              <Dashboard
-                topics={topics}
-                examHistory={examHistory}
-                savedMistakes={savedMistakes}
-                dailyTargets={dailyTargets}
-                setDailyTargets={handleSetDailyTargets}
-                setActiveTab={setActiveTab}
-                daysRemaining={daysRemaining}
-                userName={userName}
-                setUserName={setUserName}
-                examDate={examDate}
-                setExamDate={setExamDate}
-                targetScore={targetScore}
-              />
-            )}
+            <Suspense fallback={<WorkspaceLoadingSkeleton />}>
+              {isDashboard && (
+                <Dashboard
+                  topics={topics}
+                  examHistory={examHistory}
+                  savedMistakes={savedMistakes}
+                  dailyTargets={dailyTargets}
+                  setDailyTargets={handleSetDailyTargets}
+                  setActiveTab={setActiveTab}
+                  daysRemaining={daysRemaining}
+                  userName={userName}
+                  setUserName={setUserName}
+                  examDate={examDate}
+                  setExamDate={setExamDate}
+                  targetScore={targetScore}
+                />
+              )}
 
-            {isLearnGroup && (
-              <LearnWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                questionBank={questionBank}
-                topics={topics}
-                dailyTargets={dailyTargets}
-                setDailyTargets={handleSetDailyTargets}
-                daysRemaining={daysRemaining}
-                savedMistakes={savedMistakes}
-                examHistory={examHistory}
-              />
-            )}
+              {isLearnGroup && (
+                <LearnWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  questionBank={questionBank}
+                  topics={topics}
+                  dailyTargets={dailyTargets}
+                  setDailyTargets={handleSetDailyTargets}
+                  daysRemaining={daysRemaining}
+                  savedMistakes={savedMistakes}
+                  examHistory={examHistory}
+                />
+              )}
 
-            {isPracticeGroup && (
-              <PracticeWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                questionBank={questionBank}
-                savedMistakes={savedMistakes}
-                setSavedMistakes={handleSetSavedMistakes}
-                examHistory={examHistory}
-                setExamHistory={handleSetExamHistory}
-                topics={topics}
-                drillSubject={drillSubject}
-                drillTopic={drillTopic}
-                setDailyTargets={handleSetDailyTargets}
-              />
-            )}
+              {isPracticeGroup && (
+                <PracticeWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  questionBank={questionBank}
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
+                  examHistory={examHistory}
+                  setExamHistory={handleSetExamHistory}
+                  topics={topics}
+                  drillSubject={drillSubject}
+                  drillTopic={drillTopic}
+                  setDailyTargets={handleSetDailyTargets}
+                />
+              )}
 
-            {isResourceGroup && (
-              <ResourceWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                firebaseUser={firebaseUser}
-                onSignInGoogle={handleSignInGoogle}
-                savedMistakes={savedMistakes}
-                setSavedMistakes={handleSetSavedMistakes}
-                setExamHistory={handleSetExamHistory}
-              />
-            )}
+              {isResourceGroup && (
+                <ResourceWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  firebaseUser={firebaseUser}
+                  onSignInGoogle={handleSignInGoogle}
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
+                  setExamHistory={handleSetExamHistory}
+                />
+              )}
 
-            {isReviewGroup && (
-              <ReviewWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                savedMistakes={savedMistakes}
-                setSavedMistakes={handleSetSavedMistakes}
-                questionBank={questionBank}
-                setDailyTargets={handleSetDailyTargets}
-                topics={topics}
-              />
-            )}
+              {isReviewGroup && (
+                <ReviewWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
+                  questionBank={questionBank}
+                  setDailyTargets={handleSetDailyTargets}
+                  topics={topics}
+                />
+              )}
 
-            {isInsightsGroup && (
-              <InsightsWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                examHistory={examHistory}
-                topics={topics}
-              />
-            )}
+              {isInsightsGroup && (
+                <InsightsWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  examHistory={examHistory}
+                  topics={topics}
+                />
+              )}
 
-            {activeTab === 'simple_ai_quiz' && (
-              <SimpleAiQuizGenerator
-                savedMistakes={savedMistakes}
-                setSavedMistakes={handleSetSavedMistakes}
-                firebaseUser={firebaseUser}
-                setExamHistory={handleSetExamHistory}
-                onSignIn={handleSignInGoogle}
-              />
-            )}
+              {activeTab === 'simple_ai_quiz' && (
+                <SimpleAiQuizGenerator
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
+                  firebaseUser={firebaseUser}
+                  setExamHistory={handleSetExamHistory}
+                  onSignIn={handleSignInGoogle}
+                />
+              )}
 
-            {activeTab === 'prism' && (
-              <PrismWorkspace
-                firebaseUser={firebaseUser}
-                onSignIn={handleSignInGoogle}
-                savedMistakes={savedMistakes}
-                setSavedMistakes={handleSetSavedMistakes}
-                setExamHistory={handleSetExamHistory}
-              />
-            )}
+              {activeTab === 'prism' && (
+                <PrismWorkspace
+                  firebaseUser={firebaseUser}
+                  onSignIn={handleSignInGoogle}
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
+                  setExamHistory={handleSetExamHistory}
+                />
+              )}
 
-            {isAIGroup && (
-              <AIWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                onApproveStagedMcq={handleApproveStagedMcq}
-                topics={topics}
-                savedMistakes={savedMistakes}
-                setSavedMistakes={handleSetSavedMistakes}
-                examHistory={examHistory}
-                setExamHistory={handleSetExamHistory}
-                dailyTargets={dailyTargets}
-                setDailyTargets={handleSetDailyTargets}
-                daysRemaining={daysRemaining}
-              />
-            )}
+              {isAIGroup && (
+                <AIWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  onApproveStagedMcq={handleApproveStagedMcq}
+                  topics={topics}
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
+                  examHistory={examHistory}
+                  setExamHistory={handleSetExamHistory}
+                  dailyTargets={dailyTargets}
+                  setDailyTargets={handleSetDailyTargets}
+                  daysRemaining={daysRemaining}
+                />
+              )}
 
-            {isSettingsGroup && (
-              <SettingsWorkspace
-                activeSubTab={activeTab}
-                onNavigateToTab={setActiveTab}
-                userName={userName}
-                setUserName={setUserName}
-                examDate={examDate}
-                setExamDate={setExamDate}
-                targetScore={targetScore}
-                setTargetScore={setTargetScore}
-                userEmail={firebaseUser?.email ?? undefined}
-                daysRemaining={daysRemaining}
-              />
-            )}
+              {isSettingsGroup && (
+                <SettingsWorkspace
+                  activeSubTab={activeTab}
+                  onNavigateToTab={setActiveTab}
+                  userName={userName}
+                  setUserName={setUserName}
+                  examDate={examDate}
+                  setExamDate={setExamDate}
+                  targetScore={targetScore}
+                  setTargetScore={setTargetScore}
+                  userEmail={firebaseUser?.email ?? undefined}
+                  daysRemaining={daysRemaining}
+                />
+              )}
+            </Suspense>
           </main>
 
           <RightSidebar
@@ -573,11 +609,15 @@ export default function App() {
         onOpenSearch={() => setIsSearchOpen(true)}
       />
 
-      <UniversalSearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onSelectResult={(tabId) => setActiveTab(tabId)}
-      />
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <UniversalSearchModal
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            onSelectResult={(tabId) => setActiveTab(tabId)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
