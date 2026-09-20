@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter";
+import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.ts";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -18,8 +18,11 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Normalize URL paths for Vercel Serverless Function proxy routing
 app.use((req, res, next) => {
-  if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/_')) {
-    req.url = '/api' + req.url;
+  const matchedPath = req.headers["x-matched-path"] as string;
+  if (matchedPath && matchedPath.startsWith("/api")) {
+    req.url = matchedPath;
+  } else if (!req.url.startsWith("/api")) {
+    req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
   }
   next();
 });
@@ -1729,6 +1732,24 @@ Do not include any text outside the JSON object. Do not include markdown formatt
   } catch (error: any) {
     return handleAiError(res, error, "Failed to perform PRISM synthesis");
   }
+});
+
+// 404 catch-all handler for unmatched API requests
+app.use((req, res) => {
+  res.status(404).json({
+    error: "API endpoint not found",
+    requestedUrl: req.url,
+    method: req.method
+  });
+});
+
+// Global error handler for unhandled exceptions in express routes
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error("API Unhandled Error:", err);
+  res.status(500).json({
+    error: "Internal server error in API processing",
+    details: err?.message || String(err)
+  });
 });
 
 // Vite Integration for Dev / Production
