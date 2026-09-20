@@ -143,6 +143,220 @@ const requireFirebaseAuth = async (req: any, res: any, next: any) => {
 
 app.use(requireFirebaseAuth);
 
+// =====================================================================
+// SERVER-VERIFIED ADMIN AUTHORIZATION & ROLE MANAGEMENT
+// =====================================================================
+const SUPER_ADMIN_EMAIL = "mdcatquizbymehran@gmail.com";
+
+// Server-side in-memory & file-persisted admin registry
+interface AdminRecord {
+  email: string;
+  uid?: string;
+  displayName?: string;
+  role: 'super_admin' | 'admin';
+  status: 'Active' | 'Suspended';
+  assignedAt: string;
+  assignedBy: string;
+}
+
+const REGISTRY_FILE = path.join(process.cwd(), "data", "admin-registry.json");
+
+function getAdminRegistry(): Record<string, AdminRecord> {
+  const defaultRegistry: Record<string, AdminRecord> = {
+    [SUPER_ADMIN_EMAIL.toLowerCase()]: {
+      email: SUPER_ADMIN_EMAIL.toLowerCase(),
+      displayName: "Mehran Khan (Super Admin)",
+      role: "super_admin",
+      status: "Active",
+      assignedAt: "2026-09-20T00:00:00.000Z",
+      assignedBy: "system"
+    }
+  };
+
+  try {
+    if (fs.existsSync(REGISTRY_FILE)) {
+      const data = JSON.parse(fs.readFileSync(REGISTRY_FILE, "utf8"));
+      // Ensure super admin is always present and active
+      data[SUPER_ADMIN_EMAIL.toLowerCase()] = defaultRegistry[SUPER_ADMIN_EMAIL.toLowerCase()];
+      return data;
+    }
+  } catch (e) {
+    console.warn("[AdminAuth] Warning reading admin registry file:", e);
+  }
+
+  return defaultRegistry;
+}
+
+function saveAdminRegistry(registry: Record<string, AdminRecord>): void {
+  try {
+    const dir = path.dirname(REGISTRY_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    // Always preserve super admin
+    registry[SUPER_ADMIN_EMAIL.toLowerCase()] = {
+      email: SUPER_ADMIN_EMAIL.toLowerCase(),
+      displayName: "Mehran Khan (Super Admin)",
+      role: "super_admin",
+      status: "Active",
+      assignedAt: "2026-09-20T00:00:00.000Z",
+      assignedBy: "system"
+    };
+    fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2), "utf8");
+  } catch (e) {
+    console.warn("[AdminAuth] Warning saving admin registry file (falling back to memory):", e);
+  }
+}
+
+function resolveUserRole(decodedToken: any): { role: 'super_admin' | 'admin' | 'user'; email: string; uid: string } {
+  const email = (decodedToken?.email || "").trim().toLowerCase();
+  const uid = decodedToken?.user_id || decodedToken?.sub || "";
+
+  if (email && email === SUPER_ADMIN_EMAIL.toLowerCase()) {
+    return { role: "super_admin", email, uid };
+  }
+
+  const registry = getAdminRegistry();
+  const entry = (email && registry[email]) || (uid && registry[uid]);
+
+  if (entry && entry.status === "Active") {
+    return { role: entry.role === "super_admin" ? "super_admin" : "admin", email, uid };
+  }
+
+  return { role: "user", email, uid };
+}
+
+const requireAdmin = (req: any, res: any, next: any) => {
+  const roleInfo = resolveUserRole(req.user);
+  req.userRole = roleInfo.role;
+  if (roleInfo.role === "super_admin" || roleInfo.role === "admin") {
+    return next();
+  }
+  return res.status(403).json({
+    error: "Access denied: Administrator privileges required.",
+    code: "auth/forbidden",
+    role: roleInfo.role
+  });
+};
+
+const requireSuperAdmin = (req: any, res: any, next: any) => {
+  const roleInfo = resolveUserRole(req.user);
+  req.userRole = roleInfo.role;
+  if (roleInfo.role === "super_admin") {
+    return next();
+  }
+  return res.status(403).json({
+    error: "Access denied: Super Administrator privileges required.",
+    code: "auth/forbidden",
+    role: roleInfo.role
+  });
+};
+
+// GET /api/admin/role: Return verified role for the authenticated user
+app.get("/api/admin/role", (req: any, res: any) => {
+  const roleInfo = resolveUserRole(req.user);
+  res.json({
+    success: true,
+    uid: roleInfo.uid,
+    email: roleInfo.email,
+    role: roleInfo.role,
+    isSuperAdmin: roleInfo.role === "super_admin",
+    isAdmin: roleInfo.role === "super_admin" || roleInfo.role === "admin"
+  });
+});
+
+// GET /api/admin/users: List all administrators (Requires Admin)
+app.get("/api/admin/users", requireAdmin, (_req: any, res: any) => {
+  const registry = getAdminRegistry();
+  const users = Object.values(registry);
+  res.json({ success: true, users });
+});
+
+// POST /api/admin/assign-role: Add or assign admin role (Requires Super Admin)
+app.post("/api/admin/assign-role", requireSuperAdmin, (req: any, res: any) => {
+  try {
+    const { targetEmail, targetUid, role, displayName } = req.body;
+    const normalizedEmail = (targetEmail || "").trim().toLowerCase();
+
+    if (!normalizedEmail && !targetUid) {
+      return res.status(400).json({ error: "Target email or target UID is required." });
+    }
+
+    if (normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return res.status(400).json({ error: "Super Admin role is immutable and permanent." });
+    }
+
+    if (role !== "admin" && role !== "user" && role !== "Content Admin" && role !== "Subject Expert") {
+      return res.status(400).json({ error: "Invalid role. Cannot assign super_admin to other accounts." });
+    }
+
+    const registry = getAdminRegistry();
+    const key = normalizedEmail || targetUid;
+
+    if (role === "user") {
+      delete registry[key];
+    } else {
+      registry[key] = {
+        email: normalizedEmail,
+        uid: targetUid || "",
+        displayName: displayName || normalizedEmail.split("@")[0] || "Administrator",
+        role: "admin",
+        status: "Active",
+        assignedAt: new Date().toISOString(),
+        assignedBy: req.user.email || req.user.sub || "Super Admin"
+      };
+    }
+
+    saveAdminRegistry(registry);
+
+    console.log(`[SECURITY AUDIT] [ASSIGN_ROLE] Acting: ${req.user.email || req.user.sub} -> Target: ${normalizedEmail || targetUid} | New Role: ${role} | Time: ${new Date().toISOString()}`);
+
+    res.json({
+      success: true,
+      message: `Role successfully updated to '${role}' for ${normalizedEmail || targetUid}.`,
+      target: normalizedEmail || targetUid,
+      role: role === "user" ? "user" : "admin"
+    });
+  } catch (error: any) {
+    console.error("Assign Role Error:", error);
+    res.status(500).json({ error: "Failed to assign role", details: error.message });
+  }
+});
+
+// POST /api/admin/revoke-role: Revoke administrator privileges (Requires Super Admin)
+app.post("/api/admin/revoke-role", requireSuperAdmin, (req: any, res: any) => {
+  try {
+    const { targetEmail, targetUid } = req.body;
+    const normalizedEmail = (targetEmail || "").trim().toLowerCase();
+
+    if (!normalizedEmail && !targetUid) {
+      return res.status(400).json({ error: "Target email or target UID is required." });
+    }
+
+    if (normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return res.status(403).json({ error: "Super Admin privileges cannot be revoked or demoted." });
+    }
+
+    const registry = getAdminRegistry();
+    const key = normalizedEmail || targetUid;
+
+    if (registry[key]) {
+      delete registry[key];
+      saveAdminRegistry(registry);
+    }
+
+    console.log(`[SECURITY AUDIT] [REVOKE_ROLE] Acting: ${req.user.email || req.user.sub} -> Target: ${normalizedEmail || targetUid} | Time: ${new Date().toISOString()}`);
+
+    res.json({
+      success: true,
+      message: `Admin privileges successfully revoked for ${normalizedEmail || targetUid}.`
+    });
+  } catch (error: any) {
+    console.error("Revoke Role Error:", error);
+    res.status(500).json({ error: "Failed to revoke role", details: error.message });
+  }
+});
+
 // API Endpoint: Parse PDF File to Plain Text
 app.post("/api/parse-pdf", async (req, res) => {
   try {
@@ -559,7 +773,7 @@ app.post("/api/generate-mnemonic", async (req, res) => {
 });
 
 // API Endpoint 5: Automated MCQ Question Bank Cross-Reference & Validation Script
-app.post("/api/validate-question-bank", async (req, res) => {
+app.post("/api/validate-question-bank", requireAdmin, async (req, res) => {
   try {
     const { questions } = req.body;
     if (!questions || !Array.isArray(questions) || questions.length === 0) {

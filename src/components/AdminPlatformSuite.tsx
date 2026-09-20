@@ -168,7 +168,6 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
     };
   }, [currentUser, userName, currentRole]);
 
-  // User Management State - strictly uses real authenticated identities
   const [adminUsers, setAdminUsers] = useState<Array<{
     id: string;
     name: string;
@@ -177,44 +176,85 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
     status: string;
     questionsReviewed: number;
   }>>([]);
-  const [currentAdminProfile, setCurrentAdminProfile] = useState<AdminUser | null>(null);
+  const [serverRole, setServerRole] = useState<'super_admin' | 'admin' | 'user' | null>(null);
+  const [isVerifyingRole, setIsVerifyingRole] = useState<boolean>(true);
 
+  // Server-verified Role Resolution
   useEffect(() => {
-    if (!currentUser) {
-      setCurrentAdminProfile(null);
-      return;
+    let isMounted = true;
+    async function verifyAdminAuth() {
+      if (!currentUser) {
+        if (isMounted) {
+          setServerRole(null);
+          setHasAdminAccess(false);
+          setIsVerifyingRole(false);
+        }
+        return;
+      }
+
+      try {
+        setIsVerifyingRole(true);
+        const token = await currentUser.getIdToken();
+        const res = await fetch('/api/admin/role', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setServerRole(data.role);
+            const isAdmin = data.role === 'super_admin' || data.role === 'admin';
+            setHasAdminAccess(isAdmin);
+            if (data.isSuperAdmin) setCurrentRole('Super Admin');
+          }
+        } else {
+          if (isMounted) {
+            setServerRole('user');
+            setHasAdminAccess(false);
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setServerRole('user');
+          setHasAdminAccess(false);
+        }
+      } finally {
+        if (isMounted) setIsVerifyingRole(false);
+      }
     }
 
-    const unsubscribe = subscribeToAdminUserProfile(currentUser.uid, (profile) => {
-      setCurrentAdminProfile(profile);
-    });
-
-    return unsubscribe;
+    verifyAdminAuth();
+    return () => { isMounted = false; };
   }, [currentUser]);
 
-  useEffect(() => {
-    const access = !!currentAdminProfile && currentAdminProfile.status === 'Active';
-    setHasAdminAccess(access);
-  }, [currentAdminProfile]);
-
-  useEffect(() => {
+  const refreshAdminUsers = async () => {
     if (!currentUser || !hasAdminAccess) return;
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/admin/users', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminUsers((data.users || []).map((u: any) => ({
+          id: u.id || u.uid || u.email,
+          name: u.displayName || u.name || u.email,
+          email: u.email,
+          role: u.role === 'super_admin' ? 'Super Admin' : (u.role || 'Admin'),
+          status: u.status || 'Active',
+          questionsReviewed: u.questionsReviewed || 0
+        })));
+      }
+    } catch (e) {
+      console.warn('Failed to load admin users:', e);
+    }
+  };
 
-    const unsubscribeAdminUsers = subscribeToAdminUsers((users) => {
-      setAdminUsers(users.map((user) => ({
-        id: user.uid,
-        name: user.displayName,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        questionsReviewed: user.questionsReviewed || 0
-      })));
-    });
-
-    return () => {
-      unsubscribeAdminUsers();
-    };
-  }, [currentUser, hasAdminAccess]);
+  useEffect(() => {
+    if (hasAdminAccess) {
+      refreshAdminUsers();
+    }
+  }, [hasAdminAccess]);
 
   useEffect(() => {
     if (!currentUser || !hasAdminAccess) return;
@@ -498,69 +538,58 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
   };
 
   // Auth Protection Gate Screen
+  if (isVerifyingRole) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
+        <UiCard className="max-w-md w-full p-6 sm:p-8 space-y-4 shadow-2xl text-center">
+          <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400 animate-pulse">
+            <ShieldCheck className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">Verifying Administrative Privileges</h2>
+          <p className="text-xs text-slate-400">Validating server-issued security credentials...</p>
+        </UiCard>
+      </div>
+    );
+  }
+
   if (!hasAdminAccess) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
         <UiCard className="max-w-md w-full p-6 sm:p-8 space-y-6 shadow-2xl">
           <div className="text-center space-y-2">
-            <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
-              <ShieldCheck className="w-8 h-8" />
+            <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+              <Lock className="w-8 h-8" />
             </div>
-            <h2 className="text-2xl font-bold tracking-tight">NMDCAT Admin Portal</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Access Restricted</h2>
             <p className="text-xs text-slate-400">Restricted Administrative System & CMS Control Panel</p>
             
-            {authenticatedAdmin ? (
-              <div className="mt-2 text-xs bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 p-2.5 rounded-xl flex items-center justify-center gap-2 font-medium">
-                <UserCheck className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="truncate">Authenticated Admin: <strong>{authenticatedAdmin.name}</strong></span>
+            {currentUser && !currentUser.isAnonymous ? (
+              <div className="mt-2 text-xs bg-slate-900 border border-slate-800 text-slate-300 p-2.5 rounded-xl flex items-center justify-center gap-2 font-medium">
+                <UserCheck className="w-4 h-4 text-slate-400 shrink-0" />
+                <span className="truncate">Signed In: <strong>{currentUser.email}</strong></span>
               </div>
             ) : (
               <div className="mt-2 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-300 p-2.5 rounded-xl flex items-center justify-center gap-2 font-medium">
                 <UserX className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>No authenticated administrator</span>
+                <span>Anonymous / Non-Admin Session</span>
               </div>
             )}
           </div>
 
-          <div className="space-y-4">
-            <p className="text-sm font-semibold text-white">Administrator Access Authorization</p>
+          <div className="space-y-3 bg-rose-500/5 border border-rose-500/20 p-4 rounded-xl">
+            <p className="text-xs font-semibold text-rose-300">Administrator Access Required</p>
             <p className="text-xs text-slate-400 leading-relaxed">
-              If you are the project administrator or content manager, click below to unlock full access to the CMS Content Pipeline, Question Bank, and AI Content Studio.
+              You do not have administrative privileges for this workspace. Only authorized staff and the Super Administrator (<code className="text-cyan-400">mdcatquizbymehran@gmail.com</code>) are authorized to access the CMS and Question Bank management tools.
             </p>
-            
-            <button
-              onClick={async () => {
-                if (currentUser) {
-                  try {
-                    await createAdminUser({
-                      uid: currentUser.uid,
-                      email: currentUser.email || 'admin@nmdcat.edu',
-                      displayName: currentUser.displayName || userName || 'Administrator',
-                      role: 'Super Admin',
-                      status: 'Active',
-                      createdBy: currentUser.uid,
-                      updatedBy: currentUser.uid
-                    });
-                  } catch (e) {
-                    console.warn('Admin profile provision warning:', e);
-                  }
-                }
-                setHasAdminAccess(true);
-              }}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Unlock Admin Panel & CMS Workspace</span>
-            </button>
           </div>
 
-          <div className="pt-4 border-t border-slate-800 text-center">
+          <div className="pt-2 border-t border-slate-800 text-center">
             {onReturnToStudentApp && (
               <button
                 onClick={onReturnToStudentApp}
-                className="text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                &larr; Return to Student Application
+                <span>&larr; Return to Student Application</span>
               </button>
             )}
           </div>
@@ -1611,29 +1640,49 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
                 <div>
                   <h3 className="font-bold text-white text-base">Administrative User & Role Access Control</h3>
-                  <p className="text-xs text-slate-400">Manage real authenticated administrator privileges and reviewer accounts.</p>
+                  <p className="text-xs text-slate-400">Manage server-verified administrator privileges and reviewer accounts.</p>
                 </div>
-                <button
-                  onClick={async () => {
-                    const name = prompt('Enter administrator full name:');
-                    const email = prompt('Enter admin email address:');
-                    if (!name || !email) return;
-                    await createAdminUser({
-                      uid: `u_${Date.now()}`,
-                      email,
-                      displayName: name,
-                      role: 'Content Admin',
-                      status: 'Active',
-                      permissions: ['create', 'review', 'publish'],
-                      createdBy: authenticatedAdmin?.email || 'system@admin.nmdcat',
-                      updatedBy: authenticatedAdmin?.email || 'system@admin.nmdcat'
-                    });
-                  }}
-                  className="px-4 py-2 bg-cyan-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Admin User</span>
-                </button>
+                {serverRole === 'super_admin' ? (
+                  <button
+                    onClick={async () => {
+                      const name = prompt('Enter administrator full name:');
+                      const email = prompt('Enter admin email address:');
+                      if (!name || !email) return;
+                      try {
+                        const token = await currentUser?.getIdToken();
+                        const res = await fetch('/api/admin/assign-role', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                          },
+                          body: JSON.stringify({
+                            targetEmail: email,
+                            displayName: name,
+                            role: 'admin'
+                          })
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          alert(`Success: ${data.message}`);
+                          refreshAdminUsers();
+                        } else {
+                          alert(`Error: ${data.error || 'Failed to assign role'}`);
+                        }
+                      } catch (err: any) {
+                        alert(`Request error: ${err.message}`);
+                      }
+                    }}
+                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Admin User</span>
+                  </button>
+                ) : (
+                  <div className="text-[11px] bg-slate-800 text-slate-400 px-3 py-1.5 rounded-xl border border-slate-700">
+                    Admin Management Restricted to Super Admin
+                  </div>
+                )}
               </div>
 
               {adminUsers.length === 0 ? (
@@ -1641,32 +1690,80 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
                   <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
                     <UserX className="w-6 h-6" />
                   </div>
-                  <h4 className="font-bold text-white text-sm">No authenticated administrator</h4>
+                  <h4 className="font-bold text-white text-sm">No administrators found</h4>
                   <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    There are currently no active authenticated administrator profiles logged into the system session. Log in via Firebase Auth or click "Add Admin User" above to grant permissions.
+                    No authorized admin accounts are currently registered.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3 text-xs">
-                  {adminUsers.map(user => (
-                    <div key={user.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-full bg-slate-800 text-cyan-300 font-bold flex items-center justify-center shrink-0">
-                          {user.name.slice(0, 2).toUpperCase()}
+                  {adminUsers.map(user => {
+                    const isSuperAdminUser = user.email?.toLowerCase() === 'mdcatquizbymehran@gmail.com' || user.role === 'Super Admin';
+                    return (
+                      <div key={user.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-full font-bold flex items-center justify-center shrink-0 ${
+                            isSuperAdminUser ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-cyan-300'
+                          }`}>
+                            {user.name ? user.name.slice(0, 2).toUpperCase() : 'AD'}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-bold text-white block text-sm truncate">{user.name}</span>
+                            <span className="text-slate-400 block truncate">{user.email}</span>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <span className="font-bold text-white block text-sm truncate">{user.name}</span>
-                          <span className="text-slate-400 block truncate">{user.email}</span>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-cyan-300 font-bold bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20">{user.role}</span>
-                        <span className="text-slate-400">{user.questionsReviewed} Items Reviewed</span>
-                        <span className="text-[10px] bg-slate-800 text-cyan-300 px-2 py-0.5 rounded font-bold">{user.status}</span>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className={`font-bold px-2.5 py-1 rounded-lg border text-xs ${
+                            isSuperAdminUser 
+                              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' 
+                              : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+                          }`}>
+                            {user.role}
+                          </span>
+                          <span className="text-[10px] bg-slate-800 text-cyan-300 px-2 py-0.5 rounded font-bold">{user.status}</span>
+                          
+                          {serverRole === 'super_admin' && !isSuperAdminUser && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Are you sure you want to revoke admin privileges from ${user.email}?`)) return;
+                                try {
+                                  const token = await currentUser?.getIdToken();
+                                  const res = await fetch('/api/admin/revoke-role', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({
+                                      targetEmail: user.email,
+                                      targetUid: user.id
+                                    })
+                                  });
+                                  const data = await res.json();
+                                  if (res.ok) {
+                                    alert(`Success: ${data.message}`);
+                                    refreshAdminUsers();
+                                  } else {
+                                    alert(`Error: ${data.error || 'Failed to revoke role'}`);
+                                  }
+                                } catch (err: any) {
+                                  alert(`Request error: ${err.message}`);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
+                              title="Revoke Admin Access"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {isSuperAdminUser && (
+                            <span className="text-[10px] text-amber-400/80 font-medium">Permanent</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

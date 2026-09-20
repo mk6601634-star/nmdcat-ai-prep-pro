@@ -6,6 +6,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'mdcatquizbymehran@gmail.com';
+    }
+
     function isUserCreate() {
       return isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }
@@ -25,11 +29,18 @@ service cloud.firestore {
     }
 
     function isAdminUser() {
-      return isAuthenticated() && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status == 'Active';
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        (exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.status == 'Active')
+      );
     }
 
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdminUser());
+      allow create: if isAuthenticated() && request.auth.uid == userId && (!('role' in request.resource.data) || request.resource.data.role == 'user');
+      allow update: if isAuthenticated() && request.auth.uid == userId && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role);
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
     }
 
     match /topics/{docId} {
@@ -132,10 +143,7 @@ service cloud.firestore {
 
     match /adminUsers/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdminUser());
-      allow create: if isAuthenticated() && (
-        (request.auth.uid == uid && request.resource.data.status == 'Active') || isAdminUser()
-      );
-      allow update, delete: if isAuthenticated() && isAdminUser();
+      allow write: if isSuperAdmin();
     }
 
     match /mcqs/{docId} {
