@@ -1,10 +1,9 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { initializeApp as initAdminApp, getApps as getAdminApps } from "firebase-admin/app";
-import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.ts";
 
 dotenv.config({ path: ".env.local" });
@@ -16,22 +15,68 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.DEV_HOST || process.env.HOST || '0.0.0.0';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
-// Initialize Firebase Admin for server-side ID token verification
-let adminApp: any;
-if (!getAdminApps().length) {
-  let projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
-  if (!projectId) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
-      projectId = cfg.projectId;
-    } catch {}
+// Get Firebase Project ID
+let firebaseProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
+if (!firebaseProjectId) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
+    firebaseProjectId = cfg.projectId;
+  } catch {}
+}
+firebaseProjectId = firebaseProjectId || "nmdcat-prep-pro";
+
+// In-memory cache for Google's public x509 certificates
+let googleKeyCache = { keys: {} as Record<string, string>, expireAt: 0 };
+
+async function getGooglePublicCerts(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
+    return googleKeyCache.keys;
   }
-  adminApp = initAdminApp({ projectId: projectId || "nmdcat-prep-pro" });
-} else {
-  adminApp = getAdminApps()[0];
+  try {
+    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
+    const cacheControl = res.headers.get("cache-control") || "";
+    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
+    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1000 : 3600000;
+    googleKeyCache.keys = await res.json();
+    googleKeyCache.expireAt = now + maxAge;
+    return googleKeyCache.keys;
+  } catch (e) {
+    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
+    return googleKeyCache.keys;
+  }
 }
 
-const adminAuth = getAdminAuth(adminApp);
+async function verifyFirebaseToken(token: string, projectId: string): Promise<any> {
+  if (!token || typeof token !== "string") throw new Error("Token must be a non-empty string");
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid JWT format");
+
+  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+  const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  const signature = Buffer.from(parts[2], "base64url");
+
+  if (header.alg !== "RS256") throw new Error("Invalid algorithm: expected RS256");
+  if (!header.kid) throw new Error("Missing kid in token header");
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp < now) throw new Error("Firebase token has expired");
+  if (payload.iat > now + 300) throw new Error("Token issued in the future");
+  if (payload.aud !== projectId) throw new Error(`Invalid audience: expected ${projectId}`);
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) throw new Error("Invalid token issuer");
+  if (!payload.sub || typeof payload.sub !== "string") throw new Error("Invalid subject claim");
+
+  const keys = await getGooglePublicCerts();
+  const cert = keys[header.kid];
+  if (!cert) throw new Error("Unknown kid: public certificate not found");
+
+  const verifier = crypto.createVerify("RSA-SHA256");
+  verifier.update(parts[0] + "." + parts[1]);
+  const isValid = verifier.verify(cert, signature);
+  if (!isValid) throw new Error("Invalid token signature");
+
+  return payload;
+}
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -83,14 +128,15 @@ const requireFirebaseAuth = async (req: any, res: any, next: any) => {
   }
 
   try {
-    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    const decodedToken = await verifyFirebaseToken(idToken, firebaseProjectId);
     req.user = decodedToken;
-    req.userId = decodedToken.uid;
+    req.userId = decodedToken.user_id || decodedToken.sub;
     next();
   } catch (err: any) {
     return res.status(401).json({
       error: "Invalid or expired Firebase authentication token.",
-      code: err?.code || "auth/unauthorized"
+      code: "auth/unauthorized",
+      details: err?.message || String(err)
     });
   }
 };
