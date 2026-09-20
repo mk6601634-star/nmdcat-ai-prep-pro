@@ -195,10 +195,16 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      const data = await response.json();
+      let data: any;
+      const rawText = await response.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(rawText?.slice(0, 150) || `Server error (${response.status}). Please verify API keys on Vercel.`);
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate quiz');
+        throw new Error(data.error || data.details || 'Failed to generate quiz');
       }
 
       setGeneratedQuestions(data.questions || []);

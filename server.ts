@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.js";
+import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -11,7 +11,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 // DEV_HOST can be used locally to bind the server to a hostname (e.g. directed-spirit-9ds98.firebaseapp.com)
 const HOST = process.env.DEV_HOST || process.env.HOST || '0.0.0.0';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -1758,10 +1758,19 @@ async function startServer() {
   });
 }
 
-if (!process.env.VERCEL) {
+const isServerless = Boolean(
+  process.env.VERCEL || 
+  process.env.VERCEL_ENV || 
+  process.env.NOW_REGION || 
+  process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  process.env.FUNCTION_NAME
+);
+
+if (!isServerless && process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
 export default app;
 export { app };
+
 
