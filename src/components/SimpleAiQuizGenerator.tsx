@@ -67,7 +67,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   setExamHistory,
   onSignIn
 }) => {
-  const [quizSource, setQuizSource] = useState<'DATABASE' | 'AI'>('DATABASE');
   const [subject, setSubject] = useState<SubjectType>('Biology');
   const [topic, setTopic] = useState('');
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>('NORMAL');
@@ -81,6 +80,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   const [loadingAnalysis, setLoadingAnalysis] = useState<Record<number, boolean>>({});
   const [deepInsights, setDeepInsights] = useState<any>(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
   const [selectedQuestionForAnalysis, setSelectedQuestionForAnalysis] = useState<number | null>(null);
   const [savedQuizId, setSavedQuizId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -352,80 +352,13 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     setShowResults(false);
     setSavedQuestionIndices({});
     setSavedAll(false);
-
-    const norm = (s?: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
-
-    if (quizSource === 'DATABASE') {
-      try {
-        const normSub = norm(subject);
-        const normTop = norm(topic);
-
-        // 1. Search in-memory questionBank first for instant <10ms generation
-        let pool: MCQQuestion[] = [];
-        if (questionBank && questionBank.length > 0) {
-          const subPool = questionBank.filter(q => norm(q.subject) === normSub);
-          if (normTop) {
-            const topMatches = subPool.filter(q => {
-              const qTop = norm(q.topic);
-              const qChap = norm(q.chapter);
-              const qText = norm(q.question);
-              return qTop.includes(normTop) || normTop.includes(qTop) || qChap.includes(normTop) || qText.includes(normTop);
-            });
-            pool = topMatches.length > 0 ? topMatches : subPool;
-          } else {
-            pool = subPool;
-          }
-        }
-
-        // 2. If pool is empty or small, query Firestore
-        if (pool.length < questionCount) {
-          const remote = await fetchPublishedMcqsForTopic(subject, undefined, topic || undefined, questionCount * 2);
-          if (remote && remote.length > 0) {
-            pool = remote as MCQQuestion[];
-          } else {
-            const randomRemote = await fetchRandomPublishedMcqs({ subject, limitCount: questionCount * 2 });
-            if (randomRemote && randomRemote.length > 0) {
-              pool = randomRemote as MCQQuestion[];
-            }
-          }
-        }
-
-        if (pool.length === 0) {
-          throw new Error(`No database questions found for ${subject}. Please switch to AI Question Generator.`);
-        }
-
-        // Shuffle and take requested count
-        const shuffled = [...pool].sort(() => Math.random() - 0.5);
-        const chosen = shuffled.slice(0, questionCount);
-
-        const mapped: GeneratedQuestion[] = chosen.map(q => {
-          const optLetters = ['A', 'B', 'C', 'D'];
-          const correctIdx = typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < 4 ? q.correctIndex : 0;
-          return {
-            question: q.question,
-            options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctAnswer: optLetters[correctIdx] || 'A',
-            explanation: q.explanation || 'Verified PMDC standard answer and rationale.',
-            difficulty: (q.difficulty as string) || difficultyMode,
-            concept: q.topic || q.chapter || topic || subject
-          };
-        });
-
-        setGeneratedQuestions(mapped);
-        setFallbackSource('PMDC Master Database (2,593 Verified Questions)');
-        saveQuizToFirestore(mapped);
-      } catch (err: any) {
-        console.warn('Database quiz generation error:', err);
-        setError(err.message || 'Failed to load database questions. Please retry or switch to AI.');
-      } finally {
-        setIsGenerating(false);
-      }
-      return;
-    }
+    setWrongAnswerAnalyses({});
+    setDeepInsights(null);
+    setInsightsError(null);
 
     // AI Generated Mode
     if (!topic.trim()) {
-      setError('Please enter a topic for AI Generation');
+      setError('Please enter a topic or concept for AI Question Generation');
       setIsGenerating(false);
       return;
     }
@@ -436,7 +369,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
-          topic,
+          topic: topic.trim(),
           difficultyMode,
           quantity: questionCount
         })
@@ -444,7 +377,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
 
       const questions = data.questions || [];
       if (questions.length === 0) {
-        throw new Error('AI returned no valid questions. Engaging database fallback...');
+        throw new Error('AI returned no valid questions. Please try refining your topic.');
       }
 
       setGeneratedQuestions(questions);
@@ -454,34 +387,8 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         saveQuizToFirestore(questions);
       }
     } catch (err: any) {
-      console.warn('AI Quiz Generation failed, attempting resilient database fallback:', err.message);
-
-      // Resilient Fallback: Retrieve from 2,593 PMDC Question Database
-      try {
-        const dbQuestions = await fetchPublishedMcqsForTopic(subject, undefined, topic, questionCount);
-        const pool = dbQuestions.length > 0 ? dbQuestions : await fetchRandomPublishedMcqs({ subject, limitCount: questionCount });
-
-        if (pool && pool.length > 0) {
-          const fallbackMapped: GeneratedQuestion[] = pool.slice(0, questionCount).map(q => ({
-            question: q.question,
-            options: q.options,
-            correctAnswer: (['A', 'B', 'C', 'D'][q.correctIndex] || 'A'),
-            explanation: q.explanation || 'Verified PMDC standard answer.',
-            difficulty: difficultyMode,
-            concept: q.topic || q.chapter || topic
-          }));
-
-          setGeneratedQuestions(fallbackMapped);
-          setFallbackSource('PMDC Master Database Repository (2,593 Questions)');
-          setError(null);
-          saveQuizToFirestore(fallbackMapped);
-          return;
-        }
-      } catch (dbErr: any) {
-        console.warn('Database fallback also encountered error:', dbErr);
-      }
-
-      setError(err.message || 'Failed to generate quiz. Please try again.');
+      console.warn('AI Quiz Generation failed:', err);
+      setError(getAiFriendlyMessage(err) || err.message || 'Failed to generate AI quiz. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -613,6 +520,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     setError(null);
     setWrongAnswerAnalyses({});
     setDeepInsights(null);
+    setInsightsError(null);
     setSelectedQuestionForAnalysis(null);
     setSavedQuizId(null);
     setReopeningQuiz(null);
@@ -643,11 +551,21 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      if (data.success && data.analysis) {
-        setWrongAnswerAnalyses(prev => ({ ...prev, [questionIndex]: data.analysis }));
+      const analysisData = data?.analysis || (data?.whyYouWereWrong ? data : null);
+      if (analysisData) {
+        setWrongAnswerAnalyses(prev => ({ ...prev, [questionIndex]: analysisData }));
+      } else {
+        setWrongAnswerAnalyses(prev => ({ 
+          ...prev, 
+          [questionIndex]: { error: 'Unable to retrieve analysis. Please try again.' } 
+        }));
       }
     } catch (err: any) {
       console.error('Analysis failed:', err);
+      setWrongAnswerAnalyses(prev => ({ 
+        ...prev, 
+        [questionIndex]: { error: getAiFriendlyMessage(err) || err.message || 'Failed to analyze misconception.' } 
+      }));
     } finally {
       setLoadingAnalysis(prev => ({ ...prev, [questionIndex]: false }));
     }
@@ -655,6 +573,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
 
   const generateDeepInsights = async () => {
     setLoadingInsights(true);
+    setInsightsError(null);
     try {
       const data = await aiFetch<{ success?: boolean; insights?: any }>('/api/deep-ai-insights', {
         method: 'POST',
@@ -668,11 +587,15 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      if (data.success && data.insights) {
-        setDeepInsights(data.insights);
+      const insightsData = data?.insights || (data?.overallPerformance ? data : null);
+      if (insightsData) {
+        setDeepInsights(insightsData);
+      } else {
+        setInsightsError('No insights returned from AI. Please try again.');
       }
     } catch (err: any) {
       console.error('Deep insights failed:', err);
+      setInsightsError(getAiFriendlyMessage(err) || err.message || 'Failed to generate deep insights.');
     } finally {
       setLoadingInsights(false);
     }
@@ -860,49 +783,10 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       {/* Generation Form */}
       {viewMode === 'generator' && !generatedQuestions.length && (
         <div className="mx-auto max-w-2xl space-y-6 rounded-[24px] border border-slate-800/80 bg-slate-900/80 p-6 sm:p-8 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.95)]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-white">Configure Your Quiz</h2>
-              <p className="text-xs text-slate-400">Choose between verified PMDC question database or generative AI</p>
-            </div>
-            {/* Source Toggle */}
-            <div className="flex rounded-xl bg-slate-950 p-1 border border-slate-800 shrink-0">
-              <button
-                type="button"
-                onClick={() => setQuizSource('DATABASE')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  quizSource === 'DATABASE'
-                    ? 'bg-cyan-500 text-slate-950 shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Database className="w-3.5 h-3.5" />
-                <span>PMDC Database</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setQuizSource('AI')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  quizSource === 'AI'
-                    ? 'bg-indigo-500 text-slate-950 shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>AI Generator</span>
-              </button>
-            </div>
+          <div className="border-b border-slate-800 pb-3">
+            <h2 className="text-lg font-bold text-white">Configure Your AI Quiz</h2>
+            <p className="text-xs text-slate-400">Generate high-yield NMDCAT-style questions instantly using AI</p>
           </div>
-
-          {quizSource === 'DATABASE' && (
-            <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-xs text-cyan-200">
-              <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span><strong>2,593 PMDC Verified MCQs</strong> loaded & instantly playable with zero rate limits.</span>
-              </div>
-              <span className="text-[10px] font-bold bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded uppercase">Instant</span>
-            </div>
-          )}
 
           {/* Subject Selection */}
           <div className="space-y-2">
@@ -915,7 +799,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                   onClick={() => setSubject(sub)}
                   className={`flex items-center gap-2 p-3 rounded-xl text-xs font-bold transition-all ${
                     subject === sub
-                      ? quizSource === 'DATABASE' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'bg-indigo-500 text-slate-950 shadow-md'
+                      ? 'bg-indigo-500 text-slate-950 shadow-md shadow-indigo-500/20'
                       : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60'
                   }`}
                 >
@@ -929,16 +813,14 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
           {/* Topic Input */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300">Topic or Concept Filter:</label>
-              {quizSource === 'DATABASE' && (
-                <span className="text-[10px] text-slate-400">(Optional — leave blank for mixed high-yield questions)</span>
-              )}
+              <label className="text-xs font-semibold text-slate-300">Topic or Concept:</label>
+              <span className="text-[10px] text-slate-400">Specify any NMDCAT topic</span>
             </div>
             <input
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder={quizSource === 'DATABASE' ? "e.g., Cell biology, Work and Energy, Acids and Bases (or leave empty)" : "e.g., Cell membrane transport, CRISPR gene editing, Thermodynamics"}
+              placeholder="e.g., Cell membrane transport, Photosynthesis, Thermodynamics, Organic reactions"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"
             />
           </div>
@@ -954,7 +836,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                   onClick={() => setDifficultyMode(mode)}
                   className={`p-3 rounded-xl text-xs font-bold transition-all ${
                     difficultyMode === mode
-                      ? quizSource === 'DATABASE' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'bg-indigo-500 text-slate-950 shadow-md'
+                      ? 'bg-indigo-500 text-slate-950 shadow-md shadow-indigo-500/20'
                       : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60'
                   }`}
                 >
@@ -976,7 +858,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                   onClick={() => setQuestionCount(count)}
                   className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
                     questionCount === count
-                      ? quizSource === 'DATABASE' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'bg-indigo-500 text-slate-950 shadow-md'
+                      ? 'bg-indigo-500 text-slate-950 shadow-md shadow-indigo-500/20'
                       : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60'
                   }`}
                 >
@@ -991,21 +873,17 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
             type="button"
             onClick={generateQuiz}
             disabled={isGenerating}
-            className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-              quizSource === 'DATABASE'
-                ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/20'
-                : 'bg-indigo-500 hover:bg-indigo-400 text-slate-950 shadow-indigo-500/20'
-            }`}
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-indigo-500 hover:bg-indigo-400 text-slate-950 shadow-indigo-500/20"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{quizSource === 'DATABASE' ? 'Loading Database Questions...' : 'Generating AI Quiz...'}</span>
+                <span>Generating AI Quiz...</span>
               </>
             ) : (
               <>
-                <span>{quizSource === 'DATABASE' ? 'Start Database Quiz (Instant)' : 'Generate AI Quiz'}</span>
-                {quizSource === 'DATABASE' ? <Database className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                <span>Generate AI Quiz</span>
+                <Sparkles className="w-4 h-4" />
               </>
             )}
           </button>
@@ -1251,46 +1129,78 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
 
                       {wrongAnswerAnalyses[idx] && (
                         <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/60 space-y-3">
-                          <div className="font-bold text-indigo-300 flex items-center gap-2">
-                            <Brain className="w-4 h-4" />
-                            <span>AI Analysis</span>
+                          <div className="font-bold text-indigo-300 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Brain className="w-4 h-4" />
+                              <span>AI Misconception Analysis</span>
+                            </div>
+                            <button
+                              onClick={() => analyzeWrongAnswer(idx)}
+                              disabled={loadingAnalysis[idx]}
+                              className="text-[11px] text-slate-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
+                              title="Re-analyze misconception"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Re-analyze</span>
+                            </button>
                           </div>
 
-                          <div className="space-y-2 text-xs">
-                            <div>
-                              <div className="font-semibold text-amber-400 mb-1">Why You Were Wrong</div>
-                              <p className="text-slate-300">{wrongAnswerAnalyses[idx].whyYouWereWrong}</p>
+                          {wrongAnswerAnalyses[idx].error ? (
+                            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-rose-400 text-xs">
+                              {wrongAnswerAnalyses[idx].error}
                             </div>
+                          ) : (
+                            <div className="space-y-2 text-xs">
+                              {wrongAnswerAnalyses[idx].whyYouWereWrong && (
+                                <div>
+                                  <div className="font-semibold text-amber-400 mb-1">Why You Were Wrong</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].whyYouWereWrong}</p>
+                                </div>
+                              )}
 
-                            <div>
-                              <div className="font-semibold text-emerald-400 mb-1">Correct Concept</div>
-                              <p className="text-slate-300">{wrongAnswerAnalyses[idx].correctConcept}</p>
+                              {wrongAnswerAnalyses[idx].correctConcept && (
+                                <div>
+                                  <div className="font-semibold text-emerald-400 mb-1">Correct Concept</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].correctConcept}</p>
+                                </div>
+                              )}
+
+                              {wrongAnswerAnalyses[idx].whyCorrectAnswerIsCorrect && (
+                                <div>
+                                  <div className="font-semibold text-sky-400 mb-1">Why Correct Answer Is Correct</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].whyCorrectAnswerIsCorrect}</p>
+                                </div>
+                              )}
+
+                              {wrongAnswerAnalyses[idx].whyYourAnswerIsWrong && (
+                                <div>
+                                  <div className="font-semibold text-rose-400 mb-1">Why Your Answer Is Wrong</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].whyYourAnswerIsWrong}</p>
+                                </div>
+                              )}
+
+                              {wrongAnswerAnalyses[idx].distractorAnalysis && (
+                                <div>
+                                  <div className="font-semibold text-slate-400 mb-1">Distractor Analysis</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].distractorAnalysis}</p>
+                                </div>
+                              )}
+
+                              {wrongAnswerAnalyses[idx].knowledgeGap && (
+                                <div>
+                                  <div className="font-semibold text-amber-400 mb-1">Knowledge Gap</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].knowledgeGap}</p>
+                                </div>
+                              )}
+
+                              {wrongAnswerAnalyses[idx].recommendedRevision && (
+                                <div>
+                                  <div className="font-semibold text-indigo-400 mb-1">Recommended Revision</div>
+                                  <p className="text-slate-300 leading-relaxed">{wrongAnswerAnalyses[idx].recommendedRevision}</p>
+                                </div>
+                              )}
                             </div>
-
-                            <div>
-                              <div className="font-semibold text-sky-400 mb-1">Why Correct Answer Is Correct</div>
-                              <p className="text-slate-300">{wrongAnswerAnalyses[idx].whyCorrectAnswerIsCorrect}</p>
-                            </div>
-
-                            <div>
-                              <div className="font-semibold text-rose-400 mb-1">Why Your Answer Is Wrong</div>
-                              <p className="text-slate-300">{wrongAnswerAnalyses[idx].whyYourAnswerIsWrong}</p>
-                            </div>
-
-                            {wrongAnswerAnalyses[idx].knowledgeGap && (
-                              <div>
-                                <div className="font-semibold text-amber-400 mb-1">Knowledge Gap</div>
-                                <p className="text-slate-300">{wrongAnswerAnalyses[idx].knowledgeGap}</p>
-                              </div>
-                            )}
-
-                            {wrongAnswerAnalyses[idx].recommendedRevision && (
-                              <div>
-                                <div className="font-semibold text-indigo-400 mb-1">Recommended Revision</div>
-                                <p className="text-slate-300">{wrongAnswerAnalyses[idx].recommendedRevision}</p>
-                              </div>
-                            )}
-                          </div>
+                          )}
 
                           <button
                             onClick={() => addToMistakeVault(idx)}
@@ -1410,23 +1320,37 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
 
             {/* Deep AI Insights Button */}
             {!deepInsights && (
-              <button
-                onClick={generateDeepInsights}
-                disabled={loadingInsights}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loadingInsights ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Analyzing Performance...</span>
-                  </>
-                ) : (
-                  <>
-                    <Brain className="w-4 h-4" />
-                    <span>Deep AI Insights</span>
-                  </>
+              <div className="space-y-3">
+                <button
+                  onClick={generateDeepInsights}
+                  disabled={loadingInsights}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingInsights ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Analyzing Performance...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="w-4 h-4" />
+                      <span>Deep AI Insights</span>
+                    </>
+                  )}
+                </button>
+
+                {insightsError && (
+                  <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-xs flex items-center justify-between">
+                    <span>{insightsError}</span>
+                    <button
+                      onClick={generateDeepInsights}
+                      className="px-3 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 )}
-              </button>
+              </div>
             )}
 
             {/* Deep AI Insights Display */}

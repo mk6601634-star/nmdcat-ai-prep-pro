@@ -871,19 +871,27 @@ app.post("/api/generate-textbook-study-suite", async (req, res) => {
 // API Endpoint 1d: Multi-Level Concept Explanation Generator
 app.post("/api/multilevel-notes", async (req, res) => {
   try {
-    const { topicName, subject, unit } = req.body;
+    const { topicName, subject = 'Biology', unit = 'General' } = req.body;
 
-    const prompt = `Generate a multi-level concept breakdown for NMDCAT student for topic "${topicName}" (${subject}, Unit: ${unit}).
-
-    Provide JSON containing 5 explanation levels:
-    {
-      "basic": "Simple 2-3 sentence beginner breakdown.",
-      "intermediate": "FSc textbook level concept details.",
-      "advanced": "Deep mechanisms, edge cases, exceptions.",
-      "nmdcatLevel": "Exam-oriented, past paper traps, fast formulas or tricks.",
-      "medicalLevel": "Clinical / real-world medical application context for future MBBS students."
+    if (!topicName) {
+      return res.status(400).json({ error: "topicName is required" });
     }
-    Return ONLY valid JSON.`;
+
+    const prompt = `You are an expert NMDCAT professor and medical doctor.
+Generate comprehensive, 5-level tiered educational notes for:
+Subject: ${subject}
+Unit / Chapter: ${unit}
+Topic: ${topicName}
+
+Produce distinct, rich content for each of the 5 levels in JSON format:
+{
+  "basic": "Foundational concept introduction with simple everyday analogies and core definitions.",
+  "intermediate": "FSc textbook level depth, equations, and mechanisms.",
+  "advanced": "Deep conceptual mechanism analysis, exceptions, and molecular-level insights.",
+  "nmdcatLevel": "High-yield NMDCAT exam focus! PMDC past paper patterns, tricky traps, and mnemonics.",
+  "medicalLevel": "MBBS clinical relevance! Real clinical disease pathology and hospital correlation."
+}
+Return ONLY valid JSON.`;
 
     const result = await callWithFallback({
       prompt,
@@ -893,7 +901,13 @@ app.post("/api/multilevel-notes", async (req, res) => {
     });
 
     const parsed = extractJsonFromText(result.text) || {};
-    res.json({ explanations: parsed, provider: result.provider });
+    const explanations = parsed.explanations || parsed;
+
+    res.json({
+      success: true,
+      explanations,
+      provider: result.provider
+    });
   } catch (error: any) {
     return handleAiError(res, error, "Failed to generate multi-level notes");
   }
@@ -1667,64 +1681,6 @@ Do not include any text outside the JSON object. Do not include markdown formatt
     });
   } catch (error: any) {
     return handleAiError(res, error, "Failed to generate mnemonics");
-  }
-});
-
-// API Endpoint: Multi-Level Concept Notes Generator
-app.post("/api/multilevel-notes", async (req, res) => {
-  try {
-    const { topicName, subject = 'Biology', unit = 'General', difficultyMode = 'NORMAL' } = req.body;
-
-    if (!topicName) {
-      return res.status(400).json({ error: "topicName is required" });
-    }
-
-    const prompt = `You are a master NMDCAT professor, PMDC textbook author, and medical doctor specializing in high-yield medical entrance test preparation in Pakistan.
-
-Generate comprehensive, 5-level tiered educational notes for:
-Subject: ${subject}
-Unit / Chapter: ${unit}
-Topic: ${topicName}
-
-Produce distinct, highly tailored content for each of the 5 levels:
-1. basic: Foundational concept introduction with simple everyday analogies, core definitions, and basic building blocks.
-2. intermediate: FSc / Intermediate textbook level depth, standard chemical/biological equations, labeled mechanisms, and textbook diagrams descriptions.
-3. advanced: Deep conceptual mechanism analysis, kinetic derivations, exceptions to rules, and molecular-level insights.
-4. nmdcatLevel: High-yield NMDCAT exam focus! Must highlight: PMDC past paper patterns, tricky distractor traps, speed-solving mnemonics/shortcuts, and numerical/analytical shortcuts.
-5. medicalLevel: MBBS clinical relevance! Explains real clinical disease pathology, pharmacology links, diagnostic utility, and hospital correlation for future medical students.
-
-CRITICAL REQUIREMENTS:
-- Return ONLY valid JSON with no extraneous commentary.
-- Provide rich, substantial text paragraphs for all 5 tiers.
-
-Return ONLY a JSON object with this exact structure:
-{
-  "explanations": {
-    "basic": "Detailed basic explanation...",
-    "intermediate": "Detailed FSc intermediate explanation...",
-    "advanced": "Detailed advanced explanation...",
-    "nmdcatLevel": "Detailed NMDCAT exam-focused explanation...",
-    "medicalLevel": "Detailed MBBS clinical relevance explanation..."
-  }
-}`;
-
-    const result = await callWithFallback({
-      prompt,
-      temperature: 0.7,
-      maxTokens: 8192,
-      jsonMode: true,
-    });
-
-    const parsed = extractJsonFromText(result.text) || {};
-    const explanations = parsed.explanations || parsed;
-
-    res.json({
-      success: true,
-      explanations,
-      provider: result.provider,
-    });
-  } catch (error: any) {
-    return handleAiError(res, error, "Failed to generate multi-level notes");
   }
 });
 
