@@ -147,42 +147,42 @@ service cloud.firestore {
     }
 
     match /mcqs/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /notes/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /flashcards/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /formulas/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /reactions/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /mindMaps/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /mnemonics/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 
     match /vocab/{docId} {
-      allow read: if isAuthenticated() && (isAdminUser() || resource.data.status == 'PUBLISHED');
+      allow read: if resource.data.status == 'PUBLISHED' || (isAuthenticated() && isAdminUser());
       allow write: if isAuthenticated() && isAdminUser();
     }
 

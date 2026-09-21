@@ -3,6 +3,7 @@ import NMDCAT_CONFIG from '../constants/nmdcatConfig';
 import { generateExam } from '../utils/nmdcatExamGenerator';
 import UiCard from './UiCard';
 import { MCQQuestion, ExamAttempt, SavedMistake, SubjectType } from '../types';
+import { fetchRandomPublishedMcqs } from '../lib/firestoreService';
 import { 
   Flame, 
   Timer, 
@@ -15,7 +16,8 @@ import {
   Bookmark, 
   Award,
   AlertTriangle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -48,6 +50,8 @@ export const MockExam: React.FC<MockExamProps> = ({
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
   const [activeSubjectFilter, setActiveSubjectFilter] = useState<string>('All');
   const [isOmrMode, setIsOmrMode] = useState<boolean>(false); // OMR Bubble Mode #100
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [examError, setExamError] = useState<string | null>(null);
   
   // Review Mode state
   const [isReviewing, setIsReviewing] = useState<boolean>(false);
@@ -70,19 +74,66 @@ export const MockExam: React.FC<MockExamProps> = ({
     return () => clearInterval(timer);
   }, [isExamStarted, isExamSubmitted]);
 
-  const handleStartExam = () => {
-    // Generate mock exam questions from question bank + duplicated variations if count exceeds bank size
-    // Generate exam following NMDCAT distribution across subjects
-    const useSubjects = activeSubjectFilter === 'All' ? undefined : [activeSubjectFilter as SubjectType];
-    const generated = generateExam(questionBank, examLength, useSubjects as any);
-    setExamQuestions(generated);
-    setCurrentIdx(0);
-    setUserAnswers({});
-    setFlaggedQuestions({});
-    setTimeRemainingSeconds(examLength * 60); // 1 minute per question default
-    setIsExamStarted(true);
-    setIsExamSubmitted(false);
-    setIsReviewing(false);
+  const handleStartExam = async () => {
+    setIsGenerating(true);
+    setExamError(null);
+
+    try {
+      let pool = [...questionBank];
+
+      // Fallback 1: localStorage
+      if (pool.length === 0) {
+        try {
+          const cached = localStorage.getItem('nmdcat_qbank');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              pool = parsed;
+            }
+          }
+        } catch {}
+      }
+
+      // Fallback 2: Firestore remote fetch
+      if (pool.length === 0) {
+        try {
+          const remote = await fetchRandomPublishedMcqs(examLength * 2);
+          if (remote && remote.length > 0) {
+            pool = remote as MCQQuestion[];
+          }
+        } catch (err) {
+          console.warn('Failed to fetch remote questions for mock exam:', err);
+        }
+      }
+
+      if (pool.length === 0) {
+        setExamError('Database questions are still loading or unavailable. Please check your internet connection and retry in a moment.');
+        setIsGenerating(false);
+        return;
+      }
+
+      const useSubjects = activeSubjectFilter === 'All' ? undefined : [activeSubjectFilter as SubjectType];
+      const generated = generateExam(pool, examLength, useSubjects as any);
+
+      if (generated.length === 0) {
+        setExamError(`No questions available for ${activeSubjectFilter}. Please choose "All" subjects or try another filter.`);
+        setIsGenerating(false);
+        return;
+      }
+
+      setExamQuestions(generated);
+      setCurrentIdx(0);
+      setUserAnswers({});
+      setFlaggedQuestions({});
+      setTimeRemainingSeconds(examLength * 60); // 1 minute per question default
+      setIsExamStarted(true);
+      setIsExamSubmitted(false);
+      setIsReviewing(false);
+    } catch (err: any) {
+      setExamError(err?.message || 'Failed to generate mock exam. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleSelectOption = (qIndex: number, optIndex: number) => {
@@ -280,12 +331,29 @@ export const MockExam: React.FC<MockExamProps> = ({
             />
           </div>
 
+          {examError && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{examError}</span>
+            </div>
+          )}
+
           <button
             onClick={handleStartExam}
-            className="w-full py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2"
+            disabled={isGenerating}
+            className="w-full py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
-            <Flame className="w-4 h-4 fill-slate-950" />
-            <span>Launch Mock Exam Now</span>
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                <span>Preparing Verified Exam ({examLength} MCQs)...</span>
+              </>
+            ) : (
+              <>
+                <Flame className="w-4 h-4 fill-slate-950" />
+                <span>Launch Mock Exam Now</span>
+              </>
+            )}
           </button>
         </UiCard>
       )}

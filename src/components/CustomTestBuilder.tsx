@@ -753,8 +753,21 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
       return;
     }
 
-    // Filter matching questions from questionBank
-    let pool = questionBank.filter(q => config.selectedSubjects.includes(q.subject));
+    let sourceBank = questionBank;
+    if (!sourceBank || sourceBank.length === 0) {
+      try {
+        const cached = localStorage.getItem('nmdcat_qbank');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            sourceBank = parsed;
+          }
+        }
+      } catch {}
+    }
+
+    // Filter matching questions from sourceBank
+    let pool = (sourceBank || []).filter(q => config.selectedSubjects.includes(q.subject));
 
     // Filter by chapter or topic if selected
     if (config.selectedTopics.length > 0 || config.selectedChapters.length > 0) {
@@ -789,7 +802,7 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
     // Filter by mistake book if performance filter checked
     if (config.performanceFilters.includes('Mistake Book') && savedMistakes.length > 0) {
       const mistakeQIds = new Set(savedMistakes.map(m => m.questionId));
-      const mistakesPool = questionBank.filter(q => mistakeQIds.has(q.id));
+      const mistakesPool = (sourceBank || []).filter(q => mistakeQIds.has(q.id));
       if (mistakesPool.length > 0) {
         pool = mistakesPool;
       }
@@ -800,8 +813,12 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
     if (config.randomization.balancedDistribution) {
       finalQuestions = generateExam(pool, config.questionCount, config.selectedSubjects);
     } else {
-      // Do not generate synthetic questions - use only available verified questions
       finalQuestions = [...pool];
+    }
+
+    if (finalQuestions.length === 0) {
+      alert('No database questions found matching your filter criteria. Please broaden your chapter/topic selection.');
+      return;
     }
 
     // Limit to requested count
