@@ -752,19 +752,21 @@ const extractMaterialHandler = async (req: any, res: any) => {
     Extract core high-yield concepts and generate ${count} PMDC NMDCAT-style Multiple Choice Questions. Include standard, assertion-reason, or case-based questions.
     Ensure distractors reflect genuine FSc student errors. Include detailed justifications and quality rating (0-100).
     
-    Return a JSON array of objects with fields:
-    [
-      {
-        "question": "Question text",
-        "options": ["Option A", "Option B", "Option C", "Option D"],
-        "correctIndex": 0,
-        "explanation": "Detailed explanation",
-        "difficulty": "Easy|Medium|Hard",
-        "chapter": "${subject}",
-        "qualityScore": 85,
-        "validationNotes": "Validation details"
-      }
-    ]
+    Return a JSON object with fields:
+    {
+      "items": [
+        {
+          "question": "Question text",
+          "options": ["Option A", "Option B", "Option C", "Option D"],
+          "correctIndex": 0,
+          "explanation": "Detailed explanation",
+          "difficulty": "Easy|Medium|Hard",
+          "chapter": "${subject}",
+          "qualityScore": 85,
+          "validationNotes": "Validation details"
+        }
+      ]
+    }
     Return ONLY valid JSON.`;
 
     const result = await callWithFallback({
@@ -775,7 +777,7 @@ const extractMaterialHandler = async (req: any, res: any) => {
     });
 
     const parsed = extractJsonFromText(result.text);
-    const items = Array.isArray(parsed) ? parsed : (parsed?.items || parsed?.mcqs || []);
+    const items = parsed?.items || (Array.isArray(parsed) ? parsed : (parsed?.mcqs || []));
     res.json({ items, sourceTitle: documentTitle || "PDF Document", provider: result.provider });
   } catch (error: any) {
     return handleAiError(res, error, "Failed to process document and generate quiz");
@@ -956,18 +958,20 @@ const generateDiagnosticHandler = async (req: any, res: any) => {
 
     Follow PMDC NMDCAT standards strictly. Make sure distractors are plausible and based on common FSc student misunderstandings.
     
-    Return a JSON array of objects with fields:
-    [
-      {
-        "id": "mcq_1",
-        "question": "Question text",
-        "options": ["A", "B", "C", "D"],
-        "correctIndex": 0,
-        "explanation": "Scientific justification",
-        "chapter": "${topic}",
-        "subject": "${subject}"
-      }
-    ]
+    Return a JSON object with fields:
+    {
+      "mcqs": [
+        {
+          "id": "mcq_1",
+          "question": "Question text",
+          "options": ["A", "B", "C", "D"],
+          "correctIndex": 0,
+          "explanation": "Scientific justification",
+          "chapter": "${topic}",
+          "subject": "${subject}"
+        }
+      ]
+    }
     Return ONLY valid JSON.`;
 
     const result = await callWithFallback({
@@ -978,7 +982,7 @@ const generateDiagnosticHandler = async (req: any, res: any) => {
     });
 
     const parsed = extractJsonFromText(result.text);
-    const mcqs = Array.isArray(parsed) ? parsed : (parsed?.mcqs || []);
+    const mcqs = parsed?.mcqs || (Array.isArray(parsed) ? parsed : []);
     res.json({ mcqs, provider: result.provider });
   } catch (error: any) {
     return handleAiError(res, error, "Failed to generate dynamic MCQs");
@@ -1475,18 +1479,20 @@ CRITICAL REQUIREMENTS:
 5. Do not fabricate references.
 6. Flashcards must remain within the specified topic: ${topic}.
 
-Return ONLY a valid JSON array with this exact structure:
-[
-  {
-    "front": "Question or concept on the front of the card",
-    "back": "Answer and detailed explanation on the back",
-    "explanation": "Additional context or deeper explanation",
-    "concept": "Specific concept tested by this card",
-    "difficulty": "${difficultyMode}"
-  }
-]
+Return ONLY a valid JSON object with this exact structure:
+{
+  "flashcards": [
+    {
+      "front": "Question or concept on the front of the card",
+      "back": "Answer and detailed explanation on the back",
+      "explanation": "Additional context or deeper explanation",
+      "concept": "Specific concept tested by this card",
+      "difficulty": "${difficultyMode}"
+    }
+  ]
+}
 
-Do not include any text outside the JSON array. Do not include markdown formatting.`;
+Do not include any text outside the JSON object. Do not include markdown formatting.`;
 
     const result = await callWithFallback({
       prompt,
@@ -1496,7 +1502,7 @@ Do not include any text outside the JSON array. Do not include markdown formatti
     });
 
     const parsed = extractJsonFromText(result.text);
-    const flashcards = Array.isArray(parsed) ? parsed : (parsed?.flashcards || []);
+    const flashcards = parsed?.flashcards || (Array.isArray(parsed) ? parsed : []);
 
     const validFlashcards = flashcards.filter((fc: any) => {
       return fc.front && fc.back && fc.explanation && fc.concept;
@@ -1960,11 +1966,14 @@ Generate 6-10 targeted research queries designed to probe:
 4. High-yield distractor traps in PMDC exams
 5. Precise chemical/physical conditions and mechanism exceptions
 
-Return ONLY a JSON array of query strings:
-[
-  "Query string 1",
-  "Query string 2"
-]`;
+Return ONLY a valid JSON object with this exact structure:
+{
+  "queries": [
+    "Query string 1",
+    "Query string 2"
+  ]
+}
+Do not include any text outside the JSON object.`;
 
     const result = await callWithFallback({
       prompt,
@@ -1973,10 +1982,11 @@ Return ONLY a JSON array of query strings:
       jsonMode: true,
     });
 
-    const queries = extractJsonFromText(result.text) || [];
+    const parsed = extractJsonFromText(result.text) || {};
+    const queries = Array.isArray(parsed) ? parsed : (parsed.queries || []);
     res.json({
       success: true,
-      queries: Array.isArray(queries) ? queries : (queries.queries || []),
+      queries,
       provider: result.provider,
     });
   } catch (error: any) {

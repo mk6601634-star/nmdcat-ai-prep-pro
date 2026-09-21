@@ -47,6 +47,7 @@ async function audit() {
       const elapsed = Date.now() - t0;
       console.log('[FAIL] ' + name + ' (' + elapsed + 'ms) -> Error: ' + e.message);
     }
+    await new Promise(r => setTimeout(r, 1000));
   }
   console.log('\n=== AUDIT SUMMARY: ' + passCount + ' / ' + tests.length + ' PASSED ===');
 }
