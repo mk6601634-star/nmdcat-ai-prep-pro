@@ -18,6 +18,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { saveMistakeToFirestore, saveExamAttemptToFirestore } from '../../lib/firestoreService';
+import { aiFetch, getAiFriendlyMessage } from '../../lib/aiRequest';
 import type { User } from '../../lib/firebase';
 
 interface PrismQuizRunnerProps {
@@ -186,7 +187,7 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
     setAnalysisError(null);
 
     try {
-      const response = await fetch('/api/analyze-wrong-answer', {
+      const data = await aiFetch<{ success?: boolean; analysis?: any }>('/api/analyze-wrong-answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -200,14 +201,13 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
         })
       });
 
-      const data = await response.json();
       if (data.success && data.analysis) {
         setAnalyses(prev => ({ ...prev, [questionIdx]: data.analysis }));
       } else {
-        throw new Error(data.error || 'Failed to analyze misconception');
+        throw new Error('Failed to analyze misconception');
       }
     } catch (err: any) {
-      setAnalysisError(err.message || 'AI wrong answer analysis failed');
+      setAnalysisError(getAiFriendlyMessage(err) || err.message || 'AI wrong answer analysis failed');
     } finally {
       setAnalyzingIndex(null);
     }

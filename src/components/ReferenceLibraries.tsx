@@ -50,6 +50,7 @@ import {
   subscribeToUserDefinitions,
   deleteUserContent 
 } from '../lib/firestoreService';
+import { aiFetch, getAiFriendlyMessage } from '../lib/aiRequest';
 import { 
   FormulaItem, 
   ReactionItem, 
@@ -384,7 +385,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     setGeneratedContent(null);
 
     try {
-      const response = await fetch('/api/generate-formulas', {
+      const data = await aiFetch('/api/generate-formulas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -395,14 +396,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate formulas');
-      }
-
       setGeneratedContent(data);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate formulas. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate formulas. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -460,7 +456,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     setGeneratedContent(null);
 
     try {
-      const response = await fetch('/api/generate-reactions', {
+      const data = await aiFetch('/api/generate-reactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -471,14 +467,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate reactions');
-      }
-
       setGeneratedContent(data);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate reactions. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate reactions. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -536,7 +527,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     setGeneratedContent(null);
 
     try {
-      const response = await fetch('/api/generate-definitions', {
+      const data = await aiFetch('/api/generate-definitions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -547,14 +538,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate definitions');
-      }
-
       setGeneratedContent(data);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate definitions. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate definitions. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -610,7 +596,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     setGeneratedContent(null);
 
     try {
-      const response = await fetch('/api/generate-mindmap', {
+      const data = await aiFetch('/api/generate-mindmap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -620,14 +606,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate mind map');
-      }
-
       setGeneratedContent(data.mindMap);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate mind map. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate mind map. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -714,7 +695,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     setGeneratedContent(null);
 
     try {
-      const response = await fetch('/api/generate-mnemonics', {
+      const data = await aiFetch('/api/generate-mnemonics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -725,14 +706,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate mnemonics');
-      }
-
       setGeneratedContent(data.mnemonicData);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate mnemonics. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate mnemonics. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -785,7 +761,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     setGeneratedContent(null);
 
     try {
-      const response = await fetch('/api/generate-knowledge-graph', {
+      const data = await aiFetch('/api/generate-knowledge-graph', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -795,14 +771,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate knowledge graph');
-      }
-
       setGeneratedContent(data);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate knowledge graph. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate knowledge graph. Please try again.');
     } finally {
       setIsGenerating(false);
     }

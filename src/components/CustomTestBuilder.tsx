@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { MCQQuestion, SubjectType, SavedMistake, ExamAttempt, SyllabusTopic } from '../types';
 import { generateExam } from '../utils/nmdcatExamGenerator';
+import { matchQuestionsFromBank } from '../utils/topicMatcher';
 import NMDCAT_CONFIG from '../constants/nmdcatConfig';
 
 interface CustomTestBuilderProps {
@@ -755,9 +756,34 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
     // Filter matching questions from questionBank
     let pool = questionBank.filter(q => config.selectedSubjects.includes(q.subject));
 
+    // Filter by chapter or topic if selected
+    if (config.selectedTopics.length > 0 || config.selectedChapters.length > 0) {
+      const topicMatches: MCQQuestion[] = [];
+      for (const t of config.selectedTopics) {
+        topicMatches.push(...matchQuestionsFromBank(pool, { topic: t }));
+      }
+      for (const c of config.selectedChapters) {
+        topicMatches.push(...matchQuestionsFromBank(pool, { chapter: c }));
+      }
+      if (topicMatches.length > 0) {
+        const seen = new Set<string>();
+        const deduped: MCQQuestion[] = [];
+        for (const q of topicMatches) {
+          if (!seen.has(q.id)) {
+            seen.add(q.id);
+            deduped.push(q);
+          }
+        }
+        pool = deduped;
+      }
+    }
+
     // Filter by difficulty if not mixed
     if (config.difficulty !== 'Mixed') {
-      pool = pool.filter(q => q.difficulty === config.difficulty);
+      const diffFiltered = pool.filter(q => q.difficulty === config.difficulty);
+      if (diffFiltered.length > 0) {
+        pool = diffFiltered;
+      }
     }
 
     // Filter by mistake book if performance filter checked

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { SubjectType, Flashcard, EnglishVocabWord, AdminContentStatus } from '../types';
 import { subscribeToPublishedFlashcards, subscribeToPublishedVocab, saveUserFlashcards, subscribeToUserFlashcards, deleteUserContent } from '../lib/firestoreService';
+import { aiFetch, getAiFriendlyMessage } from '../lib/aiRequest';
 import { 
   Library, 
   RotateCw, 
@@ -149,7 +150,7 @@ export const FlashcardsView: React.FC<FlashcardsViewProps> = ({ firebaseUser, on
     setGeneratedFlashcards([]);
 
     try {
-      const response = await fetch('/api/generate-flashcards', {
+      const data = await aiFetch<{ flashcards?: any[] }>('/api/generate-flashcards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -160,15 +161,9 @@ export const FlashcardsView: React.FC<FlashcardsViewProps> = ({ firebaseUser, on
         })
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate flashcards');
-      }
-
       setGeneratedFlashcards(data.flashcards || []);
     } catch (err: any) {
-      setAiError(err.message || 'Failed to generate flashcards. Please try again.');
+      setAiError(getAiFriendlyMessage(err) || err.message || 'Failed to generate flashcards. Please try again.');
     } finally {
       setIsGenerating(false);
     }

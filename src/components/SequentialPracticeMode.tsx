@@ -35,6 +35,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { MCQQuestion, SubjectType } from '../types';
+import { matchQuestionsFromBank } from '../utils/topicMatcher';
 
 interface SequentialPracticeModeProps {
   questionBank: MCQQuestion[];
@@ -333,11 +334,12 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
   // Generate session questions matching objective topic
   const sessionQuestions = React.useMemo(() => {
     if (!activeObjective) return [];
-    const pool = questionBank.filter(q => q.subject === selectedSubject);
-    if (pool.length >= 5) return pool.slice(0, 5);
-
-    // No verified questions available - return empty array instead of synthetic questions
-    return [];
+    return matchQuestionsFromBank(questionBank, {
+      subject: selectedSubject,
+      chapter: activeObjective.chapter,
+      topic: activeObjective.topic || activeObjective.subtopic,
+      limit: 5
+    });
   }, [activeObjective, selectedSubject, questionBank]);
 
   // Handle MCQ Option Choice

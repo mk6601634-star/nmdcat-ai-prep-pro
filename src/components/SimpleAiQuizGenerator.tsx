@@ -36,6 +36,7 @@ import {
   fetchPublishedMcqsForTopic,
   fetchRandomPublishedMcqs
 } from '../lib/firestoreService';
+import { aiFetch, getAiFriendlyMessage } from '../lib/aiRequest';
 import type { User } from '../lib/firebase';
 
 interface GeneratedQuestion {
@@ -430,7 +431,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     }
 
     try {
-      const response = await fetch('/api/generate-quiz-simple', {
+      const data = await aiFetch<{ questions?: GeneratedQuestion[] }>('/api/generate-quiz-simple', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -440,18 +441,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
           quantity: questionCount
         })
       });
-
-      let data: any;
-      const rawText = await response.text();
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        throw new Error(rawText?.slice(0, 150) || `Server error (${response.status}).`);
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || data.details || 'Failed to generate quiz');
-      }
 
       const questions = data.questions || [];
       if (questions.length === 0) {
@@ -640,7 +629,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     setLoadingAnalysis(prev => ({ ...prev, [questionIndex]: true }));
 
     try {
-      const response = await fetch('/api/analyze-wrong-answer', {
+      const data = await aiFetch<{ success?: boolean; analysis?: any }>('/api/analyze-wrong-answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -654,9 +643,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data.success && data.analysis) {
         setWrongAnswerAnalyses(prev => ({ ...prev, [questionIndex]: data.analysis }));
       }
     } catch (err: any) {
@@ -669,7 +656,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   const generateDeepInsights = async () => {
     setLoadingInsights(true);
     try {
-      const response = await fetch('/api/deep-ai-insights', {
+      const data = await aiFetch<{ success?: boolean; insights?: any }>('/api/deep-ai-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -681,9 +668,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data.success && data.insights) {
         setDeepInsights(data.insights);
       }
     } catch (err: any) {

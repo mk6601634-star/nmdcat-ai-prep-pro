@@ -3,6 +3,7 @@ import { MCQQuestion, SubjectType, SavedMistake } from '../types';
 import { aiFetch, getAiFriendlyMessage, isAiRequestCancelled } from '../lib/aiRequest';
 import { useAiRequestAction } from '../lib/useAiRequestAction';
 import { fetchPublishedMcqsForTopic } from '../lib/firestoreService';
+import { matchQuestionsFromBank } from '../utils/topicMatcher';
 import { AiActionStatus } from './AiActionStatus';
 import { 
   BookOpen, 
@@ -66,7 +67,11 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
 
   const handleStartDrill = async () => {
     if (drillMode === 'bank') {
-      let filtered = questionBank.filter(q => q.subject === selectedSubject);
+      let filtered = matchQuestionsFromBank(questionBank, {
+        subject: selectedSubject,
+        topic: initialTopic,
+        limit: mcqCount
+      });
       if (filtered.length === 0) {
         try {
           const remote = await fetchPublishedMcqsForTopic(selectedSubject, undefined, initialTopic, mcqCount * 2);
@@ -79,7 +84,7 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
       }
       const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, mcqCount);
 
-      // Use only verified questions for the selected subject - no fallback to other subjects
+      // Use verified questions for the selected subject
       setActiveQuestions(shuffled);
       setCurrentIndex(0);
       setUserAnswers({});
@@ -119,8 +124,12 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
           setIsDrillCompleted(false);
           setAiExplanation(null);
         } else {
-          // Fallback to database questions for the selected subject only
-          let filtered = questionBank.filter(q => q.subject === selectedSubject);
+          // Fallback to database questions for the selected subject
+          let filtered = matchQuestionsFromBank(questionBank, {
+            subject: selectedSubject,
+            topic: initialTopic,
+            limit: mcqCount
+          });
           if (filtered.length === 0) {
             const remote = await fetchPublishedMcqsForTopic(selectedSubject, undefined, initialTopic, mcqCount);
             if (remote && remote.length > 0) filtered = remote as MCQQuestion[];
@@ -134,8 +143,12 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
           return;
         }
         if (import.meta.env.DEV) console.error('Error generating AI MCQs:', err);
-        // Fallback to database questions for the selected subject only
-        let filtered = questionBank.filter(q => q.subject === selectedSubject);
+        // Fallback to database questions for the selected subject
+        let filtered = matchQuestionsFromBank(questionBank, {
+          subject: selectedSubject,
+          topic: initialTopic,
+          limit: mcqCount
+        });
         if (filtered.length === 0) {
           const remote = await fetchPublishedMcqsForTopic(selectedSubject, undefined, initialTopic, mcqCount);
           if (remote && remote.length > 0) filtered = remote as MCQQuestion[];
