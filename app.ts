@@ -5,6 +5,9 @@ import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.ts";
+import { activeConfig, MODEL_REGISTRY, usageMetrics } from "./server/aiModelRegistry.ts";
+import { providersMap } from "./server/aiProviders.ts";
+import type { AIProviderId, AIMode } from "./server/aiTypes.ts";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -432,6 +435,153 @@ app.post("/api/admin/revoke-role", requireSuperAdmin, async (req: any, res: any)
   } catch (error: any) {
     console.error("Revoke Role Error:", error);
     res.status(500).json({ error: "Failed to revoke role", details: error.message });
+  }
+});
+
+// =====================================================================
+// AI MULTI-PROVIDER & MODEL SHIFTER ADMIN ENDPOINTS
+// =====================================================================
+
+// GET /api/admin/ai-config: Fetch current AI Shifter configuration, model registry, live health, and usage metrics (Admin required)
+app.get("/api/admin/ai-config", requireAdmin, async (_req: any, res: any) => {
+  try {
+    const providerIds: AIProviderId[] = ['gemini', 'cerebras', 'groq', 'longcat'];
+    
+    // Check health of all providers concurrently
+    const providerHealthList = await Promise.all(
+      providerIds.map(async (pId) => {
+        const provider = providersMap[pId];
+        const isConfigured = provider.isConfigured();
+        let isAvailable = false;
+        let latencyMs = 0;
+        let lastError: string | undefined;
+
+        if (isConfigured) {
+          try {
+            const health = await provider.healthCheck();
+            isAvailable = health.available;
+            latencyMs = health.latencyMs;
+            lastError = health.error;
+          } catch (e: any) {
+            isAvailable = false;
+            lastError = e.message;
+          }
+        }
+
+        return {
+          providerId: pId,
+          name: provider.name,
+          isConfigured,
+          isAvailable,
+          latencyMs,
+          lastChecked: new Date().toISOString(),
+          lastError
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      config: activeConfig,
+      models: MODEL_REGISTRY,
+      providers: providerHealthList,
+      metrics: usageMetrics,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error("[AI Config] Error fetching AI configuration:", error);
+    res.status(500).json({ error: "Failed to fetch AI configuration", details: error.message });
+  }
+});
+
+// POST /api/admin/ai-config: Update AI mode, default models, fallback order, and settings (Admin required)
+app.post("/api/admin/ai-config", requireAdmin, async (req: any, res: any) => {
+  try {
+    const { mode, defaultModel, fallbackOrder, fallbackEnabled, autoRoutingEnabled, cachingEnabled } = req.body;
+
+    if (mode) {
+      const validModes: AIMode[] = ['auto', 'gemini', 'cerebras', 'groq', 'longcat'];
+      if (!validModes.includes(mode)) {
+        return res.status(400).json({ error: `Invalid mode. Must be one of: ${validModes.join(', ')}` });
+      }
+      activeConfig.mode = mode;
+    }
+
+    if (defaultModel && typeof defaultModel === 'object') {
+      for (const [pId, mId] of Object.entries(defaultModel)) {
+        if (['gemini', 'cerebras', 'groq', 'longcat'].includes(pId) && typeof mId === 'string') {
+          activeConfig.defaultModel[pId as AIProviderId] = mId;
+        }
+      }
+    }
+
+    if (Array.isArray(fallbackOrder) && fallbackOrder.length > 0) {
+      const valid = fallbackOrder.filter((p: any) => ['gemini', 'cerebras', 'groq', 'longcat'].includes(p));
+      if (valid.length > 0) {
+        activeConfig.fallbackOrder = valid as AIProviderId[];
+      }
+    }
+
+    if (typeof fallbackEnabled === 'boolean') {
+      activeConfig.fallbackEnabled = fallbackEnabled;
+    }
+
+    if (typeof autoRoutingEnabled === 'boolean') {
+      activeConfig.autoRoutingEnabled = autoRoutingEnabled;
+    }
+
+    if (typeof cachingEnabled === 'boolean') {
+      activeConfig.cachingEnabled = cachingEnabled;
+    }
+
+    console.log(`[AI Shifter] Configuration updated by ${req.user.email || req.user.sub}: mode=${activeConfig.mode}, fallbackEnabled=${activeConfig.fallbackEnabled}`);
+
+    res.json({
+      success: true,
+      message: "AI configuration updated successfully.",
+      config: activeConfig
+    });
+  } catch (error: any) {
+    console.error("[AI Config] Error updating AI configuration:", error);
+    res.status(500).json({ error: "Failed to update AI configuration", details: error.message });
+  }
+});
+
+// POST /api/admin/ai-test: Directly test an AI provider/model from the admin panel (Admin required)
+app.post("/api/admin/ai-test", requireAdmin, async (req: any, res: any) => {
+  try {
+    const { provider, model, prompt, jsonMode } = req.body;
+
+    if (!provider || !['gemini', 'cerebras', 'groq', 'longcat'].includes(provider)) {
+      return res.status(400).json({ error: "Valid provider ('gemini' | 'cerebras' | 'groq' | 'longcat') is required." });
+    }
+
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ error: "Prompt is required." });
+    }
+
+    const adapter = providersMap[provider as AIProviderId];
+    if (!adapter.isConfigured()) {
+      return res.status(400).json({ error: `Provider '${provider}' is not configured on this server (API key missing in environment).` });
+    }
+
+    const result = await adapter.generateText({
+      prompt,
+      jsonMode: !!jsonMode,
+      maxTokens: 500,
+      temperature: 0.7
+    }, model);
+
+    res.json({
+      success: true,
+      result
+    });
+  } catch (error: any) {
+    console.error("[AI Test] Test generation failed:", error);
+    res.status(500).json({
+      error: error.message || "Test generation failed",
+      details: error.stack
+    });
   }
 });
 

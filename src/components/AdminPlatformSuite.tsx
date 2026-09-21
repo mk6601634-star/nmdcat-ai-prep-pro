@@ -56,10 +56,12 @@ import {
   HelpCircle,
   Menu,
   X,
-  UserX
+  UserX,
+  Cpu
 } from 'lucide-react';
 import UiCard from './UiCard';
 import { AiQuizGenerator } from './AiQuizGenerator';
+import { AdminAiModelShifter } from './AdminAiModelShifter';
 import {
   MCQQuestion,
   SubjectType,
@@ -144,7 +146,7 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'mcq_manager' | 'notes_manager' | 'flashcard_manager' |
     'vocab_manager' | 'formula_manager' | 'reaction_manager' | 'definition_manager' |
-    'mindmap_manager' | 'mnemonic_manager' | 'ai_assistant' | 'ai_quiz_generator' | 'review_queue' |
+    'mindmap_manager' | 'mnemonic_manager' | 'ai_assistant' | 'ai_quiz_generator' | 'ai_model_shifter' | 'review_queue' |
     'syllabus_manager' | 'user_manager' | 'admin_analytics' |
     'audit_logs' | 'audit_backup' | 'automated_validator'
   >('dashboard');
@@ -975,6 +977,7 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
               { id: 'mnemonic_manager', label: 'Mnemonic Manager', icon: BrainCircuit, count: mnemonicList.length },
               { id: 'ai_assistant', label: 'AI Content Studio', icon: Sparkles, badge: 'Pipeline' },
               { id: 'ai_quiz_generator', label: 'AI Quiz Generator', icon: Zap, badge: 'New' },
+              { id: 'ai_model_shifter', label: 'AI Model Shifter', icon: Cpu, badge: 'Multi-LLM', badgeColor: 'bg-indigo-500/20 text-indigo-300' },
               { id: 'review_queue', label: 'Question Review Queue', icon: Clock, count: reviewQueue.filter(q => q.status === 'OPEN').length, badgeColor: 'bg-amber-500/20 text-amber-300' },
               { id: 'syllabus_manager', label: 'Syllabus & PMDC Mapping', icon: BookMarked },
               { id: 'user_manager', label: 'User & Role Control', icon: Users, count: adminUsers.length },
@@ -2168,6 +2171,13 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
             <AutomatedMcqValidatorSuite
               questionBank={mcqList}
               onUpdateQuestionBank={setMcqList}
+            />
+          )}
+
+          {/* MODULE 15: AI MULTI-PROVIDER & MODEL SHIFTER */}
+          {activeTab === 'ai_model_shifter' && (
+            <AdminAiModelShifter
+              currentUser={currentUser}
             />
           )}
         </main>
