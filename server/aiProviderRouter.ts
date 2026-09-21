@@ -169,11 +169,10 @@ export function extractJsonFromText(text: string): any {
 const GEMINI_CASCADE_MODELS = [
   process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
-  "gemini-3.5-flash",
-  "gemini-3.6-flash"
+  "gemini-3.5-flash"
 ];
 
-// Active Groq model cascade list (ultra-fast OpenAI-compatible fallback)
+// Active Groq model cascade list (tested working models with Groq Cloud)
 const GROQ_CASCADE_MODELS = [
   process.env.FALLBACK_MODEL || "groq/compound-mini",
   "qwen/qwen3.8-27b",
@@ -184,27 +183,44 @@ const GROQ_CASCADE_MODELS = [
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// Multi-key retrieval and rotation helper
+function getApiKeys(envVar: string, altEnvVar?: string): string[] {
+  const raw = [process.env[envVar], altEnvVar ? process.env[altEnvVar] : ""].filter(Boolean).join(",");
+  if (!raw) return [];
+  return raw
+    .split(/[,;\n]/)
+    .map(k => k.trim())
+    .filter(k => k.length > 5);
+}
+
+// Cooldown tracking per API key to bypass rate-limited keys instantly (0ms)
+const keyCooldowns = new Map<string, number>();
+const COOLDOWN_DURATION_MS = 25 * 1000; // 25 seconds cooldown on 429
+
+function isKeyCoolingDown(key: string): boolean {
+  const until = keyCooldowns.get(key) || 0;
+  return until > Date.now();
+}
+
+function setKeyCooldown(key: string, durationMs = COOLDOWN_DURATION_MS) {
+  keyCooldowns.set(key, Date.now() + durationMs);
+}
+
 // ============================================================
-// GEMINI PRIMARY PROVIDER (@google/genai SDK) WITH MODEL CASCADE
+// GEMINI PRIMARY PROVIDER (@google/genai SDK) WITH MULTI-KEY & FAST FAILOVER
 // ============================================================
 export async function callGemini(options: AiGenerateOptions): Promise<AiGenerateResult> {
-  const apiKey = (process.env.GEMINI_API_KEY || "").trim();
+  const apiKeys = getApiKeys("GEMINI_API_KEY", "GEMINI_API_KEYS");
 
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not configured.");
+  if (apiKeys.length === 0) {
+    throw new Error("GEMINI_API_KEY is not configured in environment.");
   }
 
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
-  });
+  // Filter keys not currently in cooldown
+  const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
+  const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]]; // Fallback to first if all in cooldown
 
   let contents: any;
-
   if (options.image) {
     const cleanBase64 = options.image.base64Data.replace(/^data:image\/\w+;base64,/, "");
     contents = {
@@ -233,67 +249,97 @@ export async function callGemini(options: AiGenerateOptions): Promise<AiGenerate
     config.systemInstruction = options.systemInstruction;
   }
 
-  // Deduplicate model candidates while keeping priority
   const modelsToTry = Array.from(new Set(GEMINI_CASCADE_MODELS));
   let lastError: any = null;
-  let quotaErrorCount = 0;
 
-  for (let i = 0; i < modelsToTry.length; i++) {
-    const candidateModel = modelsToTry[i];
-    try {
-      const response = await ai.models.generateContent({
-        model: candidateModel,
-        contents,
-        config,
-      });
+  for (let k = 0; k < keysToTry.length; k++) {
+    const apiKey = keysToTry[k];
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
 
-      const responseText = response.text || "";
-      if (responseText) {
-        return {
-          text: responseText,
-          provider: "gemini",
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const candidateModel = modelsToTry[i];
+      try {
+        const response = await ai.models.generateContent({
           model: candidateModel,
-          isFallback: candidateModel !== modelsToTry[0],
-        };
-      }
-    } catch (err: any) {
-      lastError = err;
-      const isQuota = isQuotaOrRateLimitError(err);
-      if (isQuota) quotaErrorCount++;
+          contents,
+          config,
+        });
 
-      console.warn(`[AI Gateway] Gemini model '${candidateModel}' failed (${isQuota ? 'Quota/Rate Limit' : err.message}). ${i < modelsToTry.length - 1 ? 'Cascading...' : 'Gemini models exhausted.'}`);
-      
-      // If 2 Gemini models fail with key-level quota exhaustion, failover immediately to Groq
-      if (quotaErrorCount >= 2) {
-        console.warn(`[AI Gateway] Account quota exhausted on Gemini. Fast-failing over to Groq cascade...`);
-        break;
-      }
+        const responseText = response.text || "";
+        if (responseText) {
+          return {
+            text: responseText,
+            provider: "gemini",
+            model: candidateModel,
+            isFallback: candidateModel !== modelsToTry[0] || k > 0,
+          };
+        }
+      } catch (err: any) {
+        lastError = err;
+        const isQuota = isQuotaOrRateLimitError(err);
+        const isKeyInvalid = (err.message || "").includes("API_KEY_INVALID") || (err.message || "").includes("API key not valid");
 
-      if (i < modelsToTry.length - 1) {
-        await sleep(100);
+        if (isQuota) {
+          console.warn(`[AI Gateway] Gemini API key [${apiKey.slice(0, 8)}...] hit 429 quota on model '${candidateModel}'. Marking key on cooldown.`);
+          setKeyCooldown(apiKey);
+          // Key-level rate limit: All models on this key are rate limited. Break model loop immediately!
+          break;
+        }
+
+        if (isKeyInvalid) {
+          console.warn(`[AI Gateway] Gemini API key [${apiKey.slice(0, 8)}...] invalid. Breaking key loop.`);
+          setKeyCooldown(apiKey, 3600 * 1000); // 1 hr cooldown
+          break;
+        }
+
+        console.warn(`[AI Gateway] Gemini model '${candidateModel}' failed: ${err.message}. ${i < modelsToTry.length - 1 ? 'Cascading to next model...' : ''}`);
+        if (i < modelsToTry.length - 1) {
+          await sleep(50);
+        }
       }
     }
   }
 
-  throw lastError || new Error("All Gemini models in cascade failed.");
+  throw lastError || new Error("All Gemini keys and models failed.");
 }
 
 // ============================================================
 // GROQ FALLBACK PROVIDER (OpenAI-Compatible REST API) WITH CASCADE
 // ============================================================
 export async function callGroq(options: AiGenerateOptions): Promise<AiGenerateResult> {
-  const apiKey = (process.env.FALLBACK_API_KEY || process.env.GROQ_API_KEY || "").trim();
+  const apiKeys = getApiKeys("FALLBACK_API_KEY", "GROQ_API_KEY");
 
-  if (!apiKey) {
-    throw new Error("FALLBACK_API_KEY (Groq API Key) is not configured in environment.");
+  if (apiKeys.length === 0) {
+    throw new Error("FALLBACK_API_KEY / GROQ_API_KEY is not configured in environment.");
   }
 
-  const messages: any[] = [];
+  const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
+  const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
 
-  if (options.systemInstruction) {
+  const messages: any[] = [];
+  let promptText = options.prompt;
+  let systemText = options.systemInstruction || "";
+
+  if (options.jsonMode) {
+    if (!systemText.toLowerCase().includes("json")) {
+      systemText += (systemText ? "\n" : "") + "Respond strictly with valid JSON. Do not include markdown wraps or conversational text.";
+    }
+    if (!promptText.toLowerCase().includes("json")) {
+      promptText += "\nReturn output formatted strictly as valid JSON.";
+    }
+  }
+
+  if (systemText) {
     messages.push({
       role: "system",
-      content: options.systemInstruction,
+      content: systemText,
     });
   }
 
@@ -306,7 +352,7 @@ export async function callGroq(options: AiGenerateOptions): Promise<AiGenerateRe
     messages.push({
       role: "user",
       content: [
-        { type: "text", text: options.prompt },
+        { type: "text", text: promptText },
         {
           type: "image_url",
           image_url: {
@@ -318,75 +364,84 @@ export async function callGroq(options: AiGenerateOptions): Promise<AiGenerateRe
   } else {
     messages.push({
       role: "user",
-      content: options.prompt,
+      content: promptText,
     });
   }
 
   const modelsToTry = Array.from(new Set(GROQ_CASCADE_MODELS));
   let lastError: any = null;
 
-  for (let i = 0; i < modelsToTry.length; i++) {
-    const candidateModel = modelsToTry[i];
-    
-    // First attempt with jsonMode (if requested), then without json_object constraint on format error
-    const jsonModesToTry = options.jsonMode ? [true, false] : [false];
+  for (let k = 0; k < keysToTry.length; k++) {
+    const apiKey = keysToTry[k];
 
-    for (const useJsonFormat of jsonModesToTry) {
-      try {
-        const requestBody: any = {
-          model: candidateModel,
-          messages,
-          temperature: options.temperature ?? 0.7,
-          max_tokens: options.maxTokens ?? 4096,
-        };
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const candidateModel = modelsToTry[i];
+      
+      // First attempt with jsonMode (if requested), then fallback to standard parsing if response_format is rejected
+      const jsonModesToTry = options.jsonMode ? [true, false] : [false];
 
-        if (useJsonFormat) {
-          requestBody.response_format = { type: "json_object" };
-        }
-
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => "");
-          // If 400 bad request due to json_object response_format, try next inner loop without it
-          if (res.status === 400 && useJsonFormat && (errBody.includes("response_format") || errBody.includes("json"))) {
-            continue;
-          }
-          throw new Error(`Groq API Error (${res.status}): ${errBody || res.statusText}`);
-        }
-
-        const data: any = await res.json();
-        const choice = data?.choices?.[0];
-        const responseText = choice?.message?.content || "";
-
-        if (responseText) {
-          return {
-            text: responseText,
-            provider: "groq",
+      for (const useJsonFormat of jsonModesToTry) {
+        try {
+          const requestBody: any = {
             model: candidateModel,
-            isFallback: true,
+            messages,
+            temperature: options.temperature ?? 0.7,
+            max_tokens: options.maxTokens ?? 4096,
           };
-        }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[AI Gateway] Groq model '${candidateModel}' failed: ${err.message}`);
-        break; // Break inner loop to try next model in cascade
-      }
-    }
 
-    if (i < modelsToTry.length - 1) {
-      await sleep(200);
+          if (useJsonFormat) {
+            requestBody.response_format = { type: "json_object" };
+          }
+
+          const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => "");
+            // If 400 bad request due to json_object response_format, try next inner loop without it
+            if (res.status === 400 && useJsonFormat && (errBody.includes("response_format") || errBody.includes("json"))) {
+              continue;
+            }
+            if (res.status === 429) {
+              console.warn(`[AI Gateway] Groq key [${apiKey.slice(0, 8)}...] hit 429 rate limit. Cooling down.`);
+              setKeyCooldown(apiKey);
+              break; // Break model loop to try next key
+            }
+            throw new Error(`Groq API Error (${res.status}): ${errBody || res.statusText}`);
+          }
+
+          const data: any = await res.json();
+          const choice = data?.choices?.[0];
+          const responseText = choice?.message?.content || "";
+
+          if (responseText) {
+            return {
+              text: responseText,
+              provider: "groq",
+              model: candidateModel,
+              isFallback: true,
+            };
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[AI Gateway] Groq model '${candidateModel}' failed: ${err.message}`);
+          break; // Break inner loop to try next model in cascade
+        }
+      }
+
+      if (i < modelsToTry.length - 1) {
+        await sleep(100);
+      }
     }
   }
 
-  throw lastError || new Error("All Groq models in cascade failed.");
+  throw lastError || new Error("All Groq keys and models in cascade failed.");
 }
 
 // ============================================================
@@ -394,8 +449,10 @@ export async function callGroq(options: AiGenerateOptions): Promise<AiGenerateRe
 // ============================================================
 export async function callWithFallback(options: AiGenerateOptions): Promise<AiGenerateResult> {
   const fallbackEnabled = process.env.FALLBACK_AI_ENABLED !== "false";
-  const hasGeminiKey = !!process.env.GEMINI_API_KEY;
-  const hasFallbackKey = !!(process.env.FALLBACK_API_KEY || process.env.GROQ_API_KEY);
+  const geminiKeys = getApiKeys("GEMINI_API_KEY", "GEMINI_API_KEYS");
+  const groqKeys = getApiKeys("FALLBACK_API_KEY", "GROQ_API_KEY");
+  const hasGeminiKey = geminiKeys.length > 0;
+  const hasFallbackKey = groqKeys.length > 0;
 
   // Check in-memory cache for deterministic text requests (no image)
   if (!options.image) {
@@ -403,6 +460,21 @@ export async function callWithFallback(options: AiGenerateOptions): Promise<AiGe
     const cached = memoryCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.result;
+    }
+  }
+
+  // If all Gemini keys are currently cooling down from a recent 429, route directly to Groq (0ms overhead)
+  const allGeminiCooling = hasGeminiKey && geminiKeys.every(k => isKeyCoolingDown(k));
+  if (allGeminiCooling && hasFallbackKey && fallbackEnabled) {
+    console.log(`[AI Gateway] Gemini is cooling down. Routing directly to Groq fallback with 0ms delay...`);
+    try {
+      const result = await callGroq(options);
+      if (!options.image) {
+        memoryCache.set(getCacheKey(options), { result, expiresAt: Date.now() + CACHE_TTL_MS });
+      }
+      return result;
+    } catch (groqErr) {
+      console.warn(`[AI Gateway] Direct Groq call during Gemini cooldown failed, attempting Gemini as last resort.`);
     }
   }
 
@@ -434,8 +506,8 @@ export async function callWithFallback(options: AiGenerateOptions): Promise<AiGe
       throw primaryError;
     }
 
-    // 2. Execute Fallback (Groq Cascade) on Primary failure
-    console.warn(`[AI Gateway] All Gemini models exhausted (${primaryError.message}). Failing over to Groq fallback cascade...`);
+    // 2. Execute Fallback (Groq Cascade) instantly on Primary failure
+    console.warn(`[AI Gateway] Gemini failed (${primaryError.message}). Instant 0ms failover to Groq cascade...`);
     
     try {
       const fallbackResult = await callGroq(options);
@@ -457,4 +529,5 @@ export async function callWithFallback(options: AiGenerateOptions): Promise<AiGe
     }
   }
 }
+
 
