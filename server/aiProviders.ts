@@ -359,7 +359,20 @@ export class GroqProvider implements AIProvider {
 
     const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
     const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
-    const candidateModel = modelId || process.env.FALLBACK_MODEL || 'groq/compound-mini';
+
+    const primaryModel = (modelId || process.env.GROQ_MODEL || process.env.FALLBACK_MODEL || 'openai/gpt-oss-20b')
+      .trim()
+      .replace(/[\r\n\t]/g, '');
+
+    // Ordered list of models to try if the configured one fails (e.g. 404 model not found)
+    const modelsToTry = [
+      primaryModel,
+      ...(primaryModel !== 'openai/gpt-oss-20b' ? ['openai/gpt-oss-20b'] : []),
+      'qwen/qwen3.8-27b',
+      'openai/gpt-oss-120b',
+      'llama-3.3-70b-versatile',
+      'groq/compound-mini'
+    ].filter((v, i, a) => a.indexOf(v) === i);
 
     const messages: any[] = [];
     let promptText = options.prompt;
@@ -400,97 +413,95 @@ export class GroqProvider implements AIProvider {
 
     for (let k = 0; k < keysToTry.length; k++) {
       const apiKey = keysToTry[k];
-      const requestBody: any = {
-        model: candidateModel,
-        messages,
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxTokens ?? 4096,
-      };
 
-      if (options.jsonMode && !options.image) {
-        requestBody.response_format = { type: 'json_object' };
-      }
+      for (const candidateModel of modelsToTry) {
+        const requestBody: any = {
+          model: candidateModel,
+          messages,
+          temperature: options.temperature ?? 0.7,
+          max_tokens: options.maxTokens ?? 4096,
+        };
 
-      try {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        });
+        if (options.jsonMode && !options.image) {
+          requestBody.response_format = { type: 'json_object' };
+        }
 
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => '');
-          if (res.status === 400 && requestBody.response_format) {
-            delete requestBody.response_format;
-            const retryRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(requestBody),
-            });
-            if (retryRes.ok) {
-              const retryData: any = await retryRes.json();
-              const choice = retryData?.choices?.[0];
-              return {
-                text: choice?.message?.content || '',
-                provider: 'groq',
-                model: candidateModel,
-                isFallback: k > 0,
-                latencyMs: Date.now() - startTime,
-                usage: retryData?.usage
-                  ? {
-                      inputTokens: retryData.usage.prompt_tokens,
-                      outputTokens: retryData.usage.completion_tokens,
-                      totalTokens: retryData.usage.total_tokens,
-                    }
-                  : undefined,
-              };
+        try {
+          let res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+
+            // If 400 error was caused by response_format, retry once without it
+            if (res.status === 400 && requestBody.response_format) {
+              delete requestBody.response_format;
+              res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${apiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+              });
+            }
+
+            if (!res.ok) {
+              const finalErr = await res.text().catch(() => '');
+
+              // If model doesn't exist (404), try next model in candidate list
+              if (res.status === 404 || finalErr.includes('model_not_found')) {
+                console.warn(`[GroqProvider] Model '${candidateModel}' not found. Trying next candidate model...`);
+                continue;
+              }
+
+              if (res.status === 429) {
+                console.warn(`[GroqProvider] Key hit 429 rate limit. Setting cooldown.`);
+                setKeyCooldown(apiKey);
+                break; // Try next key
+              } else if (res.status === 401 || res.status === 403) {
+                setKeyCooldown(apiKey, 3600 * 1000);
+                throw new Error(`Groq Authentication Error (${res.status}): ${finalErr || res.statusText}`);
+              }
+
+              throw new Error(`Groq API Error (${res.status}): ${finalErr || res.statusText}`);
             }
           }
 
-          if (res.status === 429) {
-            console.warn(`[GroqProvider] Key hit 429 rate limit. Setting cooldown.`);
-            setKeyCooldown(apiKey);
-          } else if (res.status === 401 || res.status === 403) {
-            setKeyCooldown(apiKey, 3600 * 1000);
-            throw new Error(`Groq Authentication Error (${res.status}): ${errBody || res.statusText}`);
+          const data: any = await res.json();
+          const choice = data?.choices?.[0];
+          const text = choice?.message?.content || '';
+
+          if (text) {
+            return {
+              text,
+              provider: 'groq',
+              model: candidateModel,
+              isFallback: k > 0 || candidateModel !== primaryModel,
+              latencyMs: Date.now() - startTime,
+              usage: data?.usage
+                ? {
+                    inputTokens: data.usage.prompt_tokens,
+                    outputTokens: data.usage.completion_tokens,
+                    totalTokens: data.usage.total_tokens,
+                  }
+                : undefined,
+            };
           }
-
-          throw new Error(`Groq API Error (${res.status}): ${errBody || res.statusText}`);
+        } catch (err: any) {
+          lastError = err;
+          if (isConfigurationError(err)) throw err;
         }
-
-        const data: any = await res.json();
-        const choice = data?.choices?.[0];
-        const text = choice?.message?.content || '';
-
-        if (text) {
-          return {
-            text,
-            provider: 'groq',
-            model: candidateModel,
-            isFallback: k > 0,
-            latencyMs: Date.now() - startTime,
-            usage: data?.usage
-              ? {
-                  inputTokens: data.usage.prompt_tokens,
-                  outputTokens: data.usage.completion_tokens,
-                  totalTokens: data.usage.total_tokens,
-                }
-              : undefined,
-          };
-        }
-      } catch (err: any) {
-        lastError = err;
-        if (isConfigurationError(err)) throw err;
       }
     }
 
-    throw lastError || new Error(`Groq generation failed for model '${candidateModel}'.`);
+    throw lastError || new Error(`Groq generation failed across all keys and models.`);
   }
 
   async healthCheck(): Promise<{ available: boolean; latencyMs: number; error?: string }> {

@@ -182,10 +182,10 @@ export const activeConfig: AIPlatformConfig = {
   mode: 'groq', // Gemini is paused, Groq is the exclusive primary provider
   defaultProvider: 'groq',
   defaultModel: {
-    gemini: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
-    cerebras: process.env.CEREBRAS_MODEL || 'llama3.1-8b',
-    groq: process.env.FALLBACK_MODEL || 'openai/gpt-oss-20b',
-    longcat: process.env.LONGCAT_MODEL || 'longcat-default',
+    gemini: (process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite').trim().replace(/[\r\n\t]/g, ''),
+    cerebras: (process.env.CEREBRAS_MODEL || 'llama3.1-8b').trim().replace(/[\r\n\t]/g, ''),
+    groq: (process.env.GROQ_MODEL || process.env.FALLBACK_MODEL || 'openai/gpt-oss-20b').trim().replace(/[\r\n\t]/g, ''),
+    longcat: (process.env.LONGCAT_MODEL || 'longcat-default').trim().replace(/[\r\n\t]/g, ''),
   },
   fallbackOrder: ['groq', 'cerebras', 'longcat'], // Gemini excluded while paused
   fallbackEnabled: process.env.FALLBACK_AI_ENABLED !== 'false',
