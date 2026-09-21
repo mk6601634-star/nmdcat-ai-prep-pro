@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import UiCard from './UiCard';
 import { MCQQuestion, ExamAttempt } from '../types';
 import confetti from 'canvas-confetti';
-import { saveExamAttemptToFirestore } from '../lib/firestoreService';
+import { saveExamAttemptToFirestore, saveMistakeToFirestore } from '../lib/firestoreService';
 import { auth } from '../lib/firebase';
 
 interface TopicQuizRunnerProps {

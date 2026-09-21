@@ -116,10 +116,14 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
       </div>
 
       {showTopicBuilder && (
-        <TopicQuizBuilder onStartQuiz={(questions, source, meta) => {
-          setRunningQuiz({ questions, source, meta });
-          setShowTopicBuilder(false);
-        }} onClose={() => setShowTopicBuilder(false)} />
+        <TopicQuizBuilder
+          questionBank={questionBank}
+          onStartQuiz={(questions, source, meta) => {
+            setRunningQuiz({ questions, source, meta });
+            setShowTopicBuilder(false);
+          }}
+          onClose={() => setShowTopicBuilder(false)}
+        />
       )}
 
       {runningQuiz && (
