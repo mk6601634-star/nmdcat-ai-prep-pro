@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import UiCard from './UiCard';
 import { PMDC_SYLLABUS_TOPICS } from '../data/nmdcatData';
 import { fetchPublishedMcqsForTopic } from '../lib/firestoreService';
+import { matchQuestionsFromBank, scoreMcqMatch } from '../utils/topicMatcher';
 import { aiFetch } from '../lib/aiRequest';
 import { MCQQuestion } from '../types';
 import {
@@ -128,70 +129,30 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
   // 4. Compute real-time matching questions from questionBank
   const matchingDbQuestions = useMemo(() => {
     if (!questionBank || questionBank.length === 0) return [];
-    const normSub = normalize(selectedSubject);
-    const normChap = normalize(selectedChapter);
-    const normTop = normalize(selectedTopic);
-
-    // 1. Try topic level match
-    const topicMatches = questionBank.filter(q => {
-      const qSub = normalize(q.subject);
-      if (qSub !== normSub) return false;
-
-      const qChap = normalize(q.chapter);
-      const chapMatches = !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
-      if (!chapMatches) return false;
-
-      if (!normTop) return true;
-
-      const qTop = normalize(q.topic);
-      const qText = normalize(q.question);
-      return qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop) || qText.includes(normTop);
+    return matchQuestionsFromBank(questionBank, {
+      subject: selectedSubject,
+      chapter: selectedChapter,
+      topic: selectedTopic,
+      difficulty: difficulty === 'Any' ? undefined : difficulty
     });
-
-    if (topicMatches.length > 0) return topicMatches;
-
-    // 2. Fall back to chapter level match
-    const chapterMatches = questionBank.filter(q => {
-      if (normalize(q.subject) !== normSub) return false;
-      const qChap = normalize(q.chapter);
-      return !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
-    });
-
-    if (chapterMatches.length > 0) return chapterMatches;
-
-    // 3. Fall back to subject level match
-    return questionBank.filter(q => normalize(q.subject) === normSub);
-  }, [questionBank, selectedSubject, selectedChapter, selectedTopic]);
+  }, [questionBank, selectedSubject, selectedChapter, selectedTopic, difficulty]);
 
   // Count helper for chapter badge
   const getChapterQuestionCount = (chapterName: string) => {
-    const normSub = normalize(selectedSubject);
-    const normChap = normalize(chapterName);
-    return questionBank.filter(q => {
-      if (normalize(q.subject) !== normSub) return false;
-      const qChap = normalize(q.chapter);
-      return qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
+    return matchQuestionsFromBank(questionBank, {
+      subject: selectedSubject,
+      chapter: chapterName
     }).length;
   };
 
   // Count helper for topic badge
   const getTopicQuestionCount = (topicName: string) => {
-    const normSub = normalize(selectedSubject);
-    const normChap = normalize(selectedChapter);
-    const normTop = normalize(topicName);
-    const topicCount = questionBank.filter(q => {
-      if (normalize(q.subject) !== normSub) return false;
-      const qChap = normalize(q.chapter);
-      const chapMatches = !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
-      if (!chapMatches) return false;
-      const qTop = normalize(q.topic);
-      const qText = normalize(q.question);
-      return qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop) || qText.includes(normTop);
+    const topicMatches = matchQuestionsFromBank(questionBank, {
+      subject: selectedSubject,
+      chapter: selectedChapter,
+      topic: topicName
     }).length;
-
-    if (topicCount > 0) return topicCount;
-    // If specific topic has no direct mapping, show chapter pool available
-    return getChapterQuestionCount(selectedChapter);
+    return topicMatches > 0 ? topicMatches : getChapterQuestionCount(selectedChapter);
   };
 
   // Handle Start Quiz
@@ -219,10 +180,7 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
 
         // If still 0, fall back to any available questions for the subject
         if (items.length === 0) {
-          const subFallback = questionBank.filter(q => normalize(q.subject) === normalize(selectedSubject));
-          if (subFallback.length > 0) {
-            items = subFallback;
-          }
+          items = matchQuestionsFromBank(questionBank, { subject: selectedSubject });
         }
 
         if (items.length === 0) {

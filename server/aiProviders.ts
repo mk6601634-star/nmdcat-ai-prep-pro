@@ -86,6 +86,10 @@ export class GeminiProvider implements AIProvider {
     const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
     const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
     const candidateModel = modelId || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const modelsToTry = [
+      candidateModel,
+      ...(candidateModel !== 'gemini-3.5-flash-lite' ? ['gemini-3.5-flash-lite'] : []),
+    ];
 
     let contents: any;
     if (options.image) {
@@ -126,47 +130,48 @@ export class GeminiProvider implements AIProvider {
         },
       });
 
-      try {
-        const response = await ai.models.generateContent({
-          model: candidateModel,
-          contents,
-          config,
-        });
+      for (const currentModel of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: currentModel,
+            contents,
+            config,
+          });
 
-        const text = response.text || '';
-        if (text) {
-          const latencyMs = Date.now() - startTime;
-          const usageMetadata = (response as any)?.usageMetadata;
+          const text = response.text || '';
+          if (text) {
+            const latencyMs = Date.now() - startTime;
+            const usageMetadata = (response as any)?.usageMetadata;
 
-          return {
-            text,
-            provider: 'gemini',
-            model: candidateModel,
-            isFallback: k > 0,
-            latencyMs,
-            usage: usageMetadata
-              ? {
-                  inputTokens: usageMetadata.promptTokenCount,
-                  outputTokens: usageMetadata.candidatesTokenCount,
-                  totalTokens: usageMetadata.totalTokenCount,
-                }
-              : undefined,
-          };
-        }
-      } catch (err: any) {
-        lastError = err;
-        if (isQuotaOrTransientError(err)) {
-          console.warn(`[GeminiProvider] API key [${apiKey.slice(0, 8)}...] hit rate limit on model '${candidateModel}'. Setting cooldown.`);
-          setKeyCooldown(apiKey);
-        } else if (isConfigurationError(err)) {
-          console.warn(`[GeminiProvider] API key [${apiKey.slice(0, 8)}...] invalid credentials.`);
-          setKeyCooldown(apiKey, 3600 * 1000);
-          throw err;
+            return {
+              text,
+              provider: 'gemini',
+              model: currentModel,
+              isFallback: k > 0 || currentModel !== candidateModel,
+              latencyMs,
+              usage: usageMetadata
+                ? {
+                    inputTokens: usageMetadata.promptTokenCount,
+                    outputTokens: usageMetadata.candidatesTokenCount,
+                    totalTokens: usageMetadata.totalTokenCount,
+                  }
+                : undefined,
+            };
+          }
+        } catch (err: any) {
+          lastError = err;
+          if (isQuotaOrTransientError(err)) {
+            console.warn(`[GeminiProvider] Model '${currentModel}' transient error (${err?.message?.slice(0, 80)}). Trying fallback model...`);
+          } else if (isConfigurationError(err)) {
+            console.warn(`[GeminiProvider] API key [${apiKey.slice(0, 8)}...] invalid credentials.`);
+            setKeyCooldown(apiKey, 3600 * 1000);
+            break;
+          }
         }
       }
     }
 
-    throw lastError || new Error(`Gemini generation failed for model '${candidateModel}'.`);
+    throw lastError || new Error(`Gemini generation failed for models ${modelsToTry.join(', ')}.`);
   }
 
   async healthCheck(): Promise<{ available: boolean; latencyMs: number; error?: string }> {
