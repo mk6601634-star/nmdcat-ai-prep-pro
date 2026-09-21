@@ -7,7 +7,7 @@ import type {
 
 // Cooldown tracking per API key to bypass rate-limited keys instantly (0ms)
 const keyCooldowns = new Map<string, number>();
-const COOLDOWN_DURATION_MS = 25 * 1000; // 25 seconds cooldown on 429
+const COOLDOWN_DURATION_MS = 5 * 1000; // 5 seconds cooldown on 429
 
 export function isKeyCoolingDown(key: string): boolean {
   const until = keyCooldowns.get(key) || 0;
@@ -462,9 +462,8 @@ export class GroqProvider implements AIProvider {
               }
 
               if (res.status === 429) {
-                console.warn(`[GroqProvider] Key hit 429 rate limit. Setting cooldown.`);
-                setKeyCooldown(apiKey);
-                break; // Try next key
+                console.warn(`[GroqProvider] Model '${candidateModel}' hit 429 rate limit. Trying next candidate model...`);
+                continue;
               } else if (res.status === 401 || res.status === 403) {
                 setKeyCooldown(apiKey, 3600 * 1000);
                 throw new Error(`Groq Authentication Error (${res.status}): ${finalErr || res.statusText}`);
@@ -499,6 +498,7 @@ export class GroqProvider implements AIProvider {
           if (isConfigurationError(err)) throw err;
         }
       }
+      setKeyCooldown(apiKey, 5000);
     }
 
     throw lastError || new Error(`Groq generation failed across all keys and models.`);
