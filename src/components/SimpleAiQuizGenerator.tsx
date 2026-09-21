@@ -23,8 +23,7 @@ import {
   Copy,
   Check,
   Share2,
-  FileText,
-  Database
+  FileText
 } from 'lucide-react';
 import { 
   saveMistakeToFirestore, 
@@ -32,9 +31,7 @@ import {
   updateAiQuizAttempt, 
   deleteAiQuiz, 
   subscribeToAiQuizzes, 
-  createCustomMCQ,
-  fetchPublishedMcqsForTopic,
-  fetchRandomPublishedMcqs
+  createCustomMCQ
 } from '../lib/firestoreService';
 import { aiFetch, getAiFriendlyMessage } from '../lib/aiRequest';
 import type { User } from '../lib/firebase';
@@ -104,7 +101,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [savedAll, setSavedAll] = useState(false);
   const [copiedQuiz, setCopiedQuiz] = useState(false);
-  const [fallbackSource, setFallbackSource] = useState<string | null>(null);
 
   // Sync to localStorage
   useEffect(() => {
@@ -924,12 +920,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                   {difficultyMode}
                 </span>
-                {fallbackSource && (
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-cyan-400" />
-                    {fallbackSource}
-                  </span>
-                )}
               </div>
 
               {/* Action Buttons: Save Quiz, Save All MCQs, Copy */}

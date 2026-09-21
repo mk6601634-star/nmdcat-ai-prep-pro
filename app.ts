@@ -1124,25 +1124,27 @@ CRITICAL RULES:
 2. Exactly ONE option must be scientifically and factually correct according to Pakistani FSc/PMDC curriculum.
 3. All 3 distractors must be plausible and based on common student misconceptions.
 4. Explanations must be thorough, scientifically sound, and explain why the correct answer is right AND why distractors are wrong.
-5. Return ONLY a valid JSON array.
+5. Questions must be strictly related to the subject "${subject}" and topic "${topic}".
 
-Required JSON Structure:
-[
-  {
-    "question": "Question text here",
-    "options": {
-      "A": "Option A text",
-      "B": "Option B text",
-      "C": "Option C text",
-      "D": "Option D text"
-    },
-    "correctAnswer": "A",
-    "explanation": "Detailed explanation",
-    "difficulty": "${difficulty}",
-    "cognitiveLevel": "${cognitiveLevel}",
-    "topic": "${topic}"
-  }
-]
+Return ONLY a valid JSON object with this exact structure:
+{
+  "questions": [
+    {
+      "question": "Question text here",
+      "options": {
+        "A": "Option A text",
+        "B": "Option B text",
+        "C": "Option C text",
+        "D": "Option D text"
+      },
+      "correctAnswer": "A",
+      "explanation": "Detailed explanation",
+      "difficulty": "${difficulty}",
+      "cognitiveLevel": "${cognitiveLevel}",
+      "topic": "${topic}"
+    }
+  ]
+}
 Return ONLY valid JSON.`;
 
     const result = await callWithFallback({
@@ -1153,7 +1155,7 @@ Return ONLY valid JSON.`;
     });
 
     const parsed = extractJsonFromText(result.text);
-    const questions = Array.isArray(parsed) ? parsed : (parsed?.questions || []);
+    const questions = parsed?.questions || (Array.isArray(parsed) ? parsed : []);
 
     const mappedQuestions = questions.map((q: any, idx: number) => ({
       id: `${actualRequestId}_q${idx}`,
@@ -1245,28 +1247,30 @@ CRITICAL REQUIREMENTS:
 2. All distractors must be plausible but incorrect.
 3. Explanation must justify the correct answer with scientific reasoning.
 4. Questions must be appropriate for NMDCAT preparation level.
-5. Questions must remain within the specified topic: ${topic}.
+5. Questions must remain strictly within the specified subject "${subject}" and topic: ${topic}.
 6. Do not invent syllabus claims or textbook citations.
 7. Do not fabricate references.
 
-Return ONLY a valid JSON array with this exact structure:
-[
-  {
-    "question": "Question text here",
-    "options": [
-      "Option A text",
-      "Option B text",
-      "Option C text",
-      "Option D text"
-    ],
-    "correctAnswer": "A",
-    "explanation": "Detailed explanation of why this answer is correct",
-    "difficulty": "${difficultyMode}",
-    "concept": "Specific concept tested by this question"
-  }
-]
+Return ONLY a valid JSON object with this exact structure:
+{
+  "questions": [
+    {
+      "question": "Question text here",
+      "options": [
+        "Option A text",
+        "Option B text",
+        "Option C text",
+        "Option D text"
+      ],
+      "correctAnswer": "A",
+      "explanation": "Detailed explanation of why this answer is correct",
+      "difficulty": "${difficultyMode}",
+      "concept": "Specific concept tested by this question"
+    }
+  ]
+}
 
-Do not include any text outside the JSON array. Do not include markdown formatting.`;
+Do not include any text outside the JSON object. Do not include markdown formatting.`;
 
     const result = await callWithFallback({
       prompt,
@@ -1276,7 +1280,7 @@ Do not include any text outside the JSON array. Do not include markdown formatti
     });
 
     const parsed = extractJsonFromText(result.text);
-    const questions = Array.isArray(parsed) ? parsed : (parsed?.questions || []);
+    const questions = parsed?.questions || (Array.isArray(parsed) ? parsed : []);
 
     const validQuestions = questions.filter((q: any) => {
       return q.question && 
