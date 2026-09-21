@@ -132,7 +132,8 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
     const normChap = normalize(selectedChapter);
     const normTop = normalize(selectedTopic);
 
-    return questionBank.filter(q => {
+    // 1. Try topic level match
+    const topicMatches = questionBank.filter(q => {
       const qSub = normalize(q.subject);
       if (qSub !== normSub) return false;
 
@@ -140,12 +141,26 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
       const chapMatches = !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
       if (!chapMatches) return false;
 
-      if (!normTop) return true; // if no topic selected, entire chapter matches
+      if (!normTop) return true;
 
       const qTop = normalize(q.topic);
-      const topMatches = qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop);
-      return topMatches;
+      const qText = normalize(q.question);
+      return qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop) || qText.includes(normTop);
     });
+
+    if (topicMatches.length > 0) return topicMatches;
+
+    // 2. Fall back to chapter level match
+    const chapterMatches = questionBank.filter(q => {
+      if (normalize(q.subject) !== normSub) return false;
+      const qChap = normalize(q.chapter);
+      return !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
+    });
+
+    if (chapterMatches.length > 0) return chapterMatches;
+
+    // 3. Fall back to subject level match
+    return questionBank.filter(q => normalize(q.subject) === normSub);
   }, [questionBank, selectedSubject, selectedChapter, selectedTopic]);
 
   // Count helper for chapter badge
@@ -164,14 +179,19 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
     const normSub = normalize(selectedSubject);
     const normChap = normalize(selectedChapter);
     const normTop = normalize(topicName);
-    return questionBank.filter(q => {
+    const topicCount = questionBank.filter(q => {
       if (normalize(q.subject) !== normSub) return false;
       const qChap = normalize(q.chapter);
       const chapMatches = !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
       if (!chapMatches) return false;
       const qTop = normalize(q.topic);
-      return qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop);
+      const qText = normalize(q.question);
+      return qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop) || qText.includes(normTop);
     }).length;
+
+    if (topicCount > 0) return topicCount;
+    // If specific topic has no direct mapping, show chapter pool available
+    return getChapterQuestionCount(selectedChapter);
   };
 
   // Handle Start Quiz
@@ -197,9 +217,17 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
           }
         }
 
+        // If still 0, fall back to any available questions for the subject
+        if (items.length === 0) {
+          const subFallback = questionBank.filter(q => normalize(q.subject) === normalize(selectedSubject));
+          if (subFallback.length > 0) {
+            items = subFallback;
+          }
+        }
+
         if (items.length === 0) {
           setError(
-            `No database questions found for "${topicLabel}". Please switch to "AI Generated" mode to create instant high-yield questions for this topic!`
+            `No database questions currently found for "${selectedSubject}". Please choose another subject or switch to "AI Generated" mode!`
           );
           setIsLoading(false);
           return;

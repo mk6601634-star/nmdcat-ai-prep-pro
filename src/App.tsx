@@ -178,8 +178,12 @@ export default function App() {
   }, [topics]);
 
   const [questionBank, setQuestionBank] = useState<MCQQuestion[]>(() => {
-    const saved = localStorage.getItem('nmdcat_qbank');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('nmdcat_qbank');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // Real-time synchronization of the 2,593+ published PMDC MCQs from Firestore
@@ -188,6 +192,7 @@ export default function App() {
       if (remoteMcqs && remoteMcqs.length > 0) {
         setQuestionBank(remoteMcqs);
         try {
+          localStorage.setItem('nmdcat_qbank', JSON.stringify(remoteMcqs));
           localStorage.setItem('nmdcat_qbank_count', String(remoteMcqs.length));
         } catch {}
       }
@@ -554,6 +559,7 @@ export default function App() {
 
               {activeTab === 'simple_ai_quiz' && (
                 <SimpleAiQuizGenerator
+                  questionBank={questionBank}
                   savedMistakes={savedMistakes}
                   setSavedMistakes={handleSetSavedMistakes}
                   firebaseUser={firebaseUser}

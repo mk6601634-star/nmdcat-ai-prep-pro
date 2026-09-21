@@ -528,9 +528,28 @@ export function subscribeToAdminMcqs(onUpdate: (items: Array<MCQQuestion & { id:
 export function subscribeToPublishedMcqs(onUpdate: (items: Array<MCQQuestion & { id: string; status: AdminContentStatus }>) => void) {
   const collectionRef = collection(db, adminCollections.mcqs);
   const q = query(collectionRef, where('status', '==', 'PUBLISHED'));
+
+  // Immediate initial getDocs for instant zero-delay load
+  getDocs(q).then((snapshot) => {
+    if (!snapshot.empty) {
+      const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
+      snapshot.forEach((d) => {
+        const data = d.data() as any;
+        items.push({ ...data, id: data.id || d.id, status: data.status || 'PUBLISHED' });
+      });
+      items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      onUpdate(items);
+    }
+  }).catch((err) => {
+    handleError('Notice on initial published MCQs getDocs:', err);
+  });
+
   return onSnapshot(q, (snapshot) => {
     const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
-    snapshot.forEach((d) => items.push(d.data() as MCQQuestion & { id: string; status: AdminContentStatus }));
+    snapshot.forEach((d) => {
+      const data = d.data() as any;
+      items.push({ ...data, id: data.id || d.id, status: data.status || 'PUBLISHED' });
+    });
     items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
@@ -760,10 +779,10 @@ export function subscribeToAiGeneratedQuestions(onUpdate: (items: Array<MCQQuest
 }
 
 /**
- * Fetch published MCQs for a specific subject/chapter/topic with optional limit.
+ * Fetch published MCQs for a specific subject/chapter/topic with intelligent fuzzy matching and fallback.
  */
 export async function fetchPublishedMcqsForTopic(
-  subject: string,
+  subject?: string,
   chapter?: string,
   topicName?: string,
   limitCount = 100
@@ -774,18 +793,44 @@ export async function fetchPublishedMcqsForTopic(
     if (subject) {
       constraints.push(where('subject', '==', subject));
     }
-    if (chapter) {
-      constraints.push(where('chapter', '==', chapter));
-    }
 
     const q = query(collectionRef, ...constraints);
     const snapshot = await getDocs(q);
-    let items: Array<MCQQuestion & { id?: string }> = snapshot.docs.map(d => ({ ...(d.data() as any), id: d.id }));
+    let items: Array<MCQQuestion & { id?: string }> = snapshot.docs.map(d => {
+      const data = d.data() as any;
+      return { ...data, id: data.id || d.id, status: data.status || 'PUBLISHED' };
+    });
 
-    if (topicName) {
-      const hasTopicField = items.some(i => Object.prototype.hasOwnProperty.call(i, 'topic'));
-      if (hasTopicField) {
-        items = items.filter(i => (i as any).topic === topicName || (i as any).chapter === topicName);
+    const norm = (s?: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (chapter || topicName) {
+      const normChap = norm(chapter);
+      const normTop = norm(topicName);
+
+      // 1. First priority: Exact or substring match on topic and chapter
+      let filtered = items.filter(i => {
+        const qChap = norm(i.chapter);
+        const qTop = norm(i.topic);
+        const qText = norm(i.question);
+
+        const chapMatches = !normChap || qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
+        if (!chapMatches) return false;
+
+        if (!normTop) return true;
+        return qTop === normTop || qTop.includes(normTop) || normTop.includes(qTop) || qText.includes(normTop);
+      });
+
+      // 2. Second priority: If no exact topic match, match by chapter
+      if (filtered.length === 0 && normChap) {
+        filtered = items.filter(i => {
+          const qChap = norm(i.chapter);
+          return qChap === normChap || qChap.includes(normChap) || normChap.includes(qChap);
+        });
+      }
+
+      // 3. Third priority: If filtered has items, use them, otherwise use all available subject items
+      if (filtered.length > 0) {
+        items = filtered;
       }
     }
 
@@ -816,7 +861,10 @@ export async function fetchRandomPublishedMcqs(options: {
     }
     const q = query(collectionRef, ...constraints);
     const snapshot = await getDocs(q);
-    let items = snapshot.docs.map(d => ({ ...(d.data() as any), id: d.id }));
+    let items = snapshot.docs.map(d => {
+      const data = d.data() as any;
+      return { ...data, id: data.id || d.id, status: data.status || 'PUBLISHED' };
+    });
     items.sort(() => Math.random() - 0.5);
     if (options.limitCount && options.limitCount > 0) {
       items = items.slice(0, options.limitCount);

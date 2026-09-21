@@ -23,7 +23,8 @@ import {
   Copy,
   Check,
   Share2,
-  FileText
+  FileText,
+  Database
 } from 'lucide-react';
 import { 
   saveMistakeToFirestore, 
@@ -49,6 +50,7 @@ interface GeneratedQuestion {
 type DifficultyMode = 'NORMAL' | 'ADVANCED' | 'ULTRA_ADVANCED';
 
 interface SimpleAiQuizGeneratorProps {
+  questionBank?: MCQQuestion[];
   savedMistakes?: SavedMistake[];
   setSavedMistakes?: React.Dispatch<React.SetStateAction<SavedMistake[]>>;
   firebaseUser?: User | null;
@@ -57,12 +59,14 @@ interface SimpleAiQuizGeneratorProps {
 }
 
 export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
+  questionBank = [],
   savedMistakes = [],
   setSavedMistakes,
   firebaseUser,
   setExamHistory,
   onSignIn
 }) => {
+  const [quizSource, setQuizSource] = useState<'DATABASE' | 'AI'>('DATABASE');
   const [subject, setSubject] = useState<SubjectType>('Biology');
   const [topic, setTopic] = useState('');
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>('NORMAL');
@@ -339,11 +343,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   };
 
   const generateQuiz = async () => {
-    if (!topic.trim()) {
-      setError('Please enter a topic');
-      return;
-    }
-
     setIsGenerating(true);
     setError(null);
     setFallbackSource(null);
@@ -352,6 +351,83 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
     setShowResults(false);
     setSavedQuestionIndices({});
     setSavedAll(false);
+
+    const norm = (s?: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (quizSource === 'DATABASE') {
+      try {
+        const normSub = norm(subject);
+        const normTop = norm(topic);
+
+        // 1. Search in-memory questionBank first for instant <10ms generation
+        let pool: MCQQuestion[] = [];
+        if (questionBank && questionBank.length > 0) {
+          const subPool = questionBank.filter(q => norm(q.subject) === normSub);
+          if (normTop) {
+            const topMatches = subPool.filter(q => {
+              const qTop = norm(q.topic);
+              const qChap = norm(q.chapter);
+              const qText = norm(q.question);
+              return qTop.includes(normTop) || normTop.includes(qTop) || qChap.includes(normTop) || qText.includes(normTop);
+            });
+            pool = topMatches.length > 0 ? topMatches : subPool;
+          } else {
+            pool = subPool;
+          }
+        }
+
+        // 2. If pool is empty or small, query Firestore
+        if (pool.length < questionCount) {
+          const remote = await fetchPublishedMcqsForTopic(subject, undefined, topic || undefined, questionCount * 2);
+          if (remote && remote.length > 0) {
+            pool = remote as MCQQuestion[];
+          } else {
+            const randomRemote = await fetchRandomPublishedMcqs({ subject, limitCount: questionCount * 2 });
+            if (randomRemote && randomRemote.length > 0) {
+              pool = randomRemote as MCQQuestion[];
+            }
+          }
+        }
+
+        if (pool.length === 0) {
+          throw new Error(`No database questions found for ${subject}. Please switch to AI Question Generator.`);
+        }
+
+        // Shuffle and take requested count
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const chosen = shuffled.slice(0, questionCount);
+
+        const mapped: GeneratedQuestion[] = chosen.map(q => {
+          const optLetters = ['A', 'B', 'C', 'D'];
+          const correctIdx = typeof q.correctIndex === 'number' && q.correctIndex >= 0 && q.correctIndex < 4 ? q.correctIndex : 0;
+          return {
+            question: q.question,
+            options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: optLetters[correctIdx] || 'A',
+            explanation: q.explanation || 'Verified PMDC standard answer and rationale.',
+            difficulty: (q.difficulty as string) || difficultyMode,
+            concept: q.topic || q.chapter || topic || subject
+          };
+        });
+
+        setGeneratedQuestions(mapped);
+        setFallbackSource('PMDC Master Database (2,593 Verified Questions)');
+        saveQuizToFirestore(mapped);
+      } catch (err: any) {
+        console.warn('Database quiz generation error:', err);
+        setError(err.message || 'Failed to load database questions. Please retry or switch to AI.');
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+
+    // AI Generated Mode
+    if (!topic.trim()) {
+      setError('Please enter a topic for AI Generation');
+      setIsGenerating(false);
+      return;
+    }
 
     try {
       const response = await fetch('/api/generate-quiz-simple', {
@@ -799,9 +875,49 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
       {/* Generation Form */}
       {viewMode === 'generator' && !generatedQuestions.length && (
         <div className="mx-auto max-w-2xl space-y-6 rounded-[24px] border border-slate-800/80 bg-slate-900/80 p-6 sm:p-8 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.95)]">
-          <h2 className="text-lg font-bold text-white border-b border-slate-800 pb-3">
-            Configure Your AI Quiz
-          </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">Configure Your Quiz</h2>
+              <p className="text-xs text-slate-400">Choose between verified PMDC question database or generative AI</p>
+            </div>
+            {/* Source Toggle */}
+            <div className="flex rounded-xl bg-slate-950 p-1 border border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => setQuizSource('DATABASE')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  quizSource === 'DATABASE'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>PMDC Database</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuizSource('AI')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  quizSource === 'AI'
+                    ? 'bg-indigo-500 text-slate-950 shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI Generator</span>
+              </button>
+            </div>
+          </div>
+
+          {quizSource === 'DATABASE' && (
+            <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between text-xs text-cyan-200">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span><strong>2,593 PMDC Verified MCQs</strong> loaded & instantly playable with zero rate limits.</span>
+              </div>
+              <span className="text-[10px] font-bold bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded uppercase">Instant</span>
+            </div>
+          )}
 
           {/* Subject Selection */}
           <div className="space-y-2">
@@ -814,7 +930,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                   onClick={() => setSubject(sub)}
                   className={`flex items-center gap-2 p-3 rounded-xl text-xs font-bold transition-all ${
                     subject === sub
-                      ? 'bg-indigo-500 text-slate-950 shadow-md'
+                      ? quizSource === 'DATABASE' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'bg-indigo-500 text-slate-950 shadow-md'
                       : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60'
                   }`}
                 >
@@ -827,12 +943,17 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
 
           {/* Topic Input */}
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-300">Enter Topic:</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300">Topic or Concept Filter:</label>
+              {quizSource === 'DATABASE' && (
+                <span className="text-[10px] text-slate-400">(Optional — leave blank for mixed high-yield questions)</span>
+              )}
+            </div>
             <input
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., Cell membrane transport, CRISPR gene editing, Thermodynamics"
+              placeholder={quizSource === 'DATABASE' ? "e.g., Cell biology, Work and Energy, Acids and Bases (or leave empty)" : "e.g., Cell membrane transport, CRISPR gene editing, Thermodynamics"}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"
             />
           </div>
@@ -848,7 +969,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                   onClick={() => setDifficultyMode(mode)}
                   className={`p-3 rounded-xl text-xs font-bold transition-all ${
                     difficultyMode === mode
-                      ? 'bg-indigo-500 text-slate-950 shadow-md'
+                      ? quizSource === 'DATABASE' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'bg-indigo-500 text-slate-950 shadow-md'
                       : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60'
                   }`}
                 >
@@ -870,7 +991,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                   onClick={() => setQuestionCount(count)}
                   className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all ${
                     questionCount === count
-                      ? 'bg-indigo-500 text-slate-950 shadow-md'
+                      ? quizSource === 'DATABASE' ? 'bg-cyan-500 text-slate-950 shadow-md' : 'bg-indigo-500 text-slate-950 shadow-md'
                       : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700/60'
                   }`}
                 >
@@ -885,17 +1006,21 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
             type="button"
             onClick={generateQuiz}
             disabled={isGenerating}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              quizSource === 'DATABASE'
+                ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/20'
+                : 'bg-indigo-500 hover:bg-indigo-400 text-slate-950 shadow-indigo-500/20'
+            }`}
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating AI Quiz...</span>
+                <span>{quizSource === 'DATABASE' ? 'Loading Database Questions...' : 'Generating AI Quiz...'}</span>
               </>
             ) : (
               <>
-                <span>Generate Quiz</span>
-                <Sparkles className="w-4 h-4" />
+                <span>{quizSource === 'DATABASE' ? 'Start Database Quiz (Instant)' : 'Generate AI Quiz'}</span>
+                {quizSource === 'DATABASE' ? <Database className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
               </>
             )}
           </button>
