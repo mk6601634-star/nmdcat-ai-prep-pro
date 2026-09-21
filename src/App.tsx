@@ -80,7 +80,8 @@ import {
   subscribeToExamAttempts,
   saveExamAttemptToFirestore,
   subscribeToDailyTargets,
-  saveDailyTargetToFirestore
+  saveDailyTargetToFirestore,
+  subscribeToPublishedMcqs
 } from './lib/firestoreService';
 
 export default function App() {
@@ -180,6 +181,22 @@ export default function App() {
     const saved = localStorage.getItem('nmdcat_qbank');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Real-time synchronization of the 2,593+ published PMDC MCQs from Firestore
+  useEffect(() => {
+    const unsubQBank = subscribeToPublishedMcqs((remoteMcqs) => {
+      if (remoteMcqs && remoteMcqs.length > 0) {
+        setQuestionBank(remoteMcqs);
+        try {
+          localStorage.setItem('nmdcat_qbank_count', String(remoteMcqs.length));
+        } catch {}
+      }
+    });
+
+    return () => {
+      unsubQBank();
+    };
+  }, []);
 
   const [savedMistakes, setSavedMistakes] = useState<SavedMistake[]>(() => {
     const saved = localStorage.getItem('nmdcat_mistakes');

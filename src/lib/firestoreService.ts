@@ -748,10 +748,11 @@ export async function rejectStagedQuestion(questionId: string, rejectedBy: strin
  */
 export function subscribeToAiGeneratedQuestions(onUpdate: (items: Array<MCQQuestion & { id: string; status: AdminContentStatus }>) => void) {
   const collectionRef = collection(db, adminCollections.mcqs);
-  const q = query(collectionRef, where('status', '==', 'AI_GENERATED'), orderBy('createdAt', 'desc'));
+  const q = query(collectionRef, where('status', '==', 'AI_GENERATED'));
   return onSnapshot(q, (snapshot) => {
     const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as MCQQuestion & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to AI-generated questions:', err);
@@ -776,10 +777,6 @@ export async function fetchPublishedMcqsForTopic(
     if (chapter) {
       constraints.push(where('chapter', '==', chapter));
     }
-    constraints.push(orderBy('createdAt', 'desc'));
-    if (limitCount && limitCount > 0) {
-      constraints.push(limit(limitCount));
-    }
 
     const q = query(collectionRef, ...constraints);
     const snapshot = await getDocs(q);
@@ -788,8 +785,13 @@ export async function fetchPublishedMcqsForTopic(
     if (topicName) {
       const hasTopicField = items.some(i => Object.prototype.hasOwnProperty.call(i, 'topic'));
       if (hasTopicField) {
-        items = items.filter(i => (i as any).topic === topicName);
+        items = items.filter(i => (i as any).topic === topicName || (i as any).chapter === topicName);
       }
+    }
+
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    if (limitCount && limitCount > 0) {
+      items = items.slice(0, limitCount);
     }
 
     return items;
@@ -812,10 +814,14 @@ export async function fetchRandomPublishedMcqs(options: {
     if (options.subject) {
       constraints.push(where('subject', '==', options.subject));
     }
-    constraints.push(limit(options.limitCount || 50));
     const q = query(collectionRef, ...constraints);
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ ...(d.data() as any), id: d.id }));
+    let items = snapshot.docs.map(d => ({ ...(d.data() as any), id: d.id }));
+    items.sort(() => Math.random() - 0.5);
+    if (options.limitCount && options.limitCount > 0) {
+      items = items.slice(0, options.limitCount);
+    }
+    return items;
   } catch (err) {
     handleError('Error fetching random published MCQs:', err);
     return [];
@@ -826,16 +832,17 @@ export async function fetchRandomPublishedMcqs(options: {
  * Count available published MCQs for a topic.
  */
 export async function getPublishedMcqCountForTopic(subject: string, chapter?: string, topicName?: string): Promise<number> {
-  const items = await fetchPublishedMcqsForTopic(subject, chapter, topicName, 200);
+  const items = await fetchPublishedMcqsForTopic(subject, chapter, topicName, 500);
   return items.length;
 }
 
 function subscribeToPublishedCollection<T>(collectionName: string, onUpdate: (items: T[]) => void) {
   const collectionRef = collection(db, collectionName);
-  const q = query(collectionRef, where('status', '==', 'PUBLISHED'), orderBy('createdAt', 'desc'));
+  const q = query(collectionRef, where('status', '==', 'PUBLISHED'));
   return onSnapshot(q, (snapshot) => {
     const items: T[] = [];
     snapshot.forEach((d) => items.push(d.data() as T));
+    items.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError(`Error subscribing to published collection ${collectionName}:`, err);
@@ -845,9 +852,11 @@ function subscribeToPublishedCollection<T>(collectionName: string, onUpdate: (it
 async function getPublishedCollection<T>(collectionName: string): Promise<T[]> {
   try {
     const collectionRef = collection(db, collectionName);
-    const q = query(collectionRef, where('status', '==', 'PUBLISHED'), orderBy('createdAt', 'desc'));
+    const q = query(collectionRef, where('status', '==', 'PUBLISHED'));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((docSnap) => docSnap.data() as T);
+    const items = snapshot.docs.map((docSnap) => docSnap.data() as T);
+    items.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    return items;
   } catch (err) {
     handleError(`Error fetching published collection ${collectionName}:`, err);
     return [];
@@ -957,11 +966,12 @@ export async function deleteAdminNote(noteId: string) {
 export function subscribeToAdminNotes(onUpdate: (items: Array<DefinitionItem & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.notes);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<DefinitionItem & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as DefinitionItem & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin notes:', err);
@@ -999,11 +1009,12 @@ export async function deleteAdminFlashcard(flashcardId: string) {
 export function subscribeToAdminFlashcards(onUpdate: (items: Array<Flashcard & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.flashcards);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<Flashcard & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as Flashcard & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin flashcards:', err);
@@ -1041,11 +1052,12 @@ export async function deleteAdminFormula(formulaId: string) {
 export function subscribeToAdminFormulas(onUpdate: (items: Array<FormulaItem & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.formulas);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<FormulaItem & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as FormulaItem & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin formulas:', err);
@@ -1083,11 +1095,12 @@ export async function deleteAdminReaction(reactionId: string) {
 export function subscribeToAdminReactions(onUpdate: (items: Array<ReactionItem & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.reactions);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<ReactionItem & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as ReactionItem & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin reactions:', err);
@@ -1125,11 +1138,12 @@ export async function deleteAdminMindMap(mindMapId: string) {
 export function subscribeToAdminMindMaps(onUpdate: (items: Array<ConceptMindMap & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.mindMaps);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<ConceptMindMap & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as ConceptMindMap & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin mind maps:', err);
@@ -1192,11 +1206,12 @@ export async function deleteAdminVocab(vocabId: string) {
 export function subscribeToAdminVocab(onUpdate: (items: Array<EnglishVocabWord & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.vocab);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<EnglishVocabWord & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as EnglishVocabWord & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin vocab items:', err);
@@ -1206,11 +1221,12 @@ export function subscribeToAdminVocab(onUpdate: (items: Array<EnglishVocabWord &
 export function subscribeToAdminMnemonics(onUpdate: (items: Array<CustomMCQ & { id: string; status: AdminContentStatus }>) => void, statusFilter?: AdminContentStatus) {
   const collectionRef = collection(db, adminCollections.mnemonics);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<CustomMCQ & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as CustomMCQ & { id: string; status: AdminContentStatus }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin mnemonics:', err);
@@ -1248,11 +1264,12 @@ export async function deleteSyllabusMapping(mappingId: string) {
 export function subscribeToSyllabusMappings(onUpdate: (items: Array<SyllabusMappingDocument & { id: string }>) => void, boardFilter?: string) {
   const collectionRef = collection(db, adminCollections.syllabusMappings);
   const q = boardFilter
-    ? query(collectionRef, where('board', '==', boardFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('board', '==', boardFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: Array<SyllabusMappingDocument & { id: string }> = [];
     snapshot.forEach((d) => items.push(d.data() as SyllabusMappingDocument & { id: string }));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to syllabus mappings:', err);
@@ -1290,10 +1307,11 @@ export async function updateAdminUser(uid: string, update: Partial<Omit<AdminUse
 }
 
 export function subscribeToAdminUsers(onUpdate: (users: AdminUser[]) => void) {
-  const q = query(collection(db, adminCollections.adminUsers), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, adminCollections.adminUsers));
   return onSnapshot(q, (snapshot) => {
     const users: AdminUser[] = [];
     snapshot.forEach((d) => users.push(d.data() as AdminUser));
+    users.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(users);
   }, (err) => {
     handleError('Error subscribing to admin users:', err);
@@ -1337,10 +1355,11 @@ export async function createAuditLog(entry: Omit<AuditLogEntry, 'id' | 'createdA
 }
 
 export function subscribeToAuditLogs(onUpdate: (logs: AuditLogEntry[]) => void) {
-  const q = query(collection(db, adminCollections.auditLogs), orderBy('createdAt', 'desc'), limit(100));
+  const q = query(collection(db, adminCollections.auditLogs), limit(100));
   return onSnapshot(q, (snapshot) => {
     const logs: AuditLogEntry[] = [];
     snapshot.forEach((d) => logs.push(d.data() as AuditLogEntry));
+    logs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(logs);
   }, (err) => {
     handleError('Error subscribing to audit logs:', err);
@@ -1381,11 +1400,12 @@ export async function updateReviewQueueItem(itemId: string, update: Partial<Revi
 export function subscribeToReviewQueue(onUpdate: (items: ReviewQueueItem[]) => void, statusFilter?: string) {
   const collectionRef = collection(db, adminCollections.reviewQueue);
   const q = statusFilter
-    ? query(collectionRef, where('status', '==', statusFilter), orderBy('createdAt', 'desc'))
-    : query(collectionRef, orderBy('createdAt', 'desc'));
+    ? query(collectionRef, where('status', '==', statusFilter))
+    : query(collectionRef);
   return onSnapshot(q, (snapshot) => {
     const items: ReviewQueueItem[] = [];
     snapshot.forEach((d) => items.push(d.data() as ReviewQueueItem));
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to review queue:', err);
@@ -1419,10 +1439,11 @@ export async function createContentVersion(version: Omit<ContentVersion, 'id' | 
 }
 
 export function subscribeToContentVersions(contentId: string, onUpdate: (versions: ContentVersion[]) => void) {
-  const q = query(collection(db, adminCollections.contentVersions), where('contentId', '==', contentId), orderBy('version', 'desc'));
+  const q = query(collection(db, adminCollections.contentVersions), where('contentId', '==', contentId));
   return onSnapshot(q, (snapshot) => {
     const versions: ContentVersion[] = [];
     snapshot.forEach((d) => versions.push(d.data() as ContentVersion));
+    versions.sort((a, b) => (b.version || 0) - (a.version || 0));
     onUpdate(versions);
   }, (err) => {
     handleError('Error subscribing to content versions:', err);
