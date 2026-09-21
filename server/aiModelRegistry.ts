@@ -97,59 +97,59 @@ export const MODEL_REGISTRY: AIModelDefinition[] = [
 
   // Groq Models
   {
-    id: 'groq/compound-mini',
+    id: 'openai/gpt-oss-20b',
     provider: 'groq',
-    name: 'Groq Compound-Mini (Active Fast)',
-    capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: false },
-    contextLimit: 32768,
+    name: 'Groq GPT-OSS 20B (Ultra-Fast 730+ t/s)',
+    capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: true },
+    contextLimit: 131072,
     supportsStructuredOutput: true,
     isEnabled: true,
-    recommendedTasks: ['flashcard', 'mnemonic', 'explanation', 'bulk_mcq'],
-    description: 'High-throughput low-latency compound model for real-time study tools.',
+    recommendedTasks: ['bulk_mcq', 'doubt_solver', 'explanation', 'flashcard', 'mnemonic', 'prism'],
+    description: 'Ultra-fast OpenAI architecture running on Groq LPUs at 730+ tokens/second.',
   },
   {
     id: 'qwen/qwen3.8-27b',
     provider: 'groq',
-    name: 'Groq Qwen 3.8 27B',
+    name: 'Groq Qwen 3.8 27B (High-Precision Reasoning)',
     capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: true },
-    contextLimit: 32768,
+    contextLimit: 131042,
     supportsStructuredOutput: true,
     isEnabled: true,
-    recommendedTasks: ['doubt_solver', 'explanation', 'flashcard'],
-    description: 'Strong reasoning model with fast LPUs on Groq.',
+    recommendedTasks: ['doubt_solver', 'explanation', 'prism', 'bulk_mcq'],
+    description: 'High-precision 27B reasoning model with fast LPUs on Groq.',
   },
   {
-    id: 'llama-3.3-70b-versatile',
+    id: 'openai/gpt-oss-120b',
     provider: 'groq',
-    name: 'Groq Llama 3.3 70B Versatile',
+    name: 'Groq GPT-OSS 120B (Flagship)',
     capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: true },
-    contextLimit: 128000,
+    contextLimit: 131072,
     supportsStructuredOutput: true,
     isEnabled: true,
-    recommendedTasks: ['doubt_solver', 'explanation', 'prism'],
-    description: 'Robust 70B parameter model with large context support.',
+    recommendedTasks: ['prism', 'doubt_solver', 'explanation'],
+    description: 'Massive 120B parameter model with 131k context window on Groq LPUs.',
   },
   {
-    id: 'llama-3.1-8b-instant',
+    id: 'groq/compound-mini',
     provider: 'groq',
-    name: 'Groq Llama 3.1 8B Instant',
+    name: 'Groq Compound-Mini',
     capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: false },
-    contextLimit: 8192,
+    contextLimit: 131072,
     supportsStructuredOutput: true,
     isEnabled: true,
-    recommendedTasks: ['mnemonic', 'flashcard', 'explanation'],
-    description: 'Instant response generation for quick vocabulary and mnemonics.',
+    recommendedTasks: ['flashcard', 'mnemonic', 'explanation'],
+    description: 'Compound routing model on Groq.',
   },
   {
-    id: 'llama-3.2-11b-vision-preview',
+    id: 'groq/compound',
     provider: 'groq',
-    name: 'Groq Llama 3.2 11B Vision',
-    capabilities: { text: true, json: true, vision: true, fastInference: true, deepReasoning: false },
-    contextLimit: 8192,
+    name: 'Groq Compound (Large)',
+    capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: true },
+    contextLimit: 131072,
     supportsStructuredOutput: true,
     isEnabled: true,
-    recommendedTasks: ['doubt_solver'],
-    description: 'Multimodal image query fallback for question doubt solving.',
+    recommendedTasks: ['prism', 'bulk_mcq'],
+    description: 'Large compound model on Groq.',
   },
 
   // LongCat Models
@@ -179,15 +179,15 @@ export const MODEL_REGISTRY: AIModelDefinition[] = [
 
 // Active Server Configuration (In-Memory with Admin Updates)
 export const activeConfig: AIPlatformConfig = {
-  mode: (process.env.AI_MODE as AIMode) || 'auto',
-  defaultProvider: 'gemini',
+  mode: 'groq', // Gemini is paused, Groq is the exclusive primary provider
+  defaultProvider: 'groq',
   defaultModel: {
     gemini: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
     cerebras: process.env.CEREBRAS_MODEL || 'llama3.1-8b',
-    groq: process.env.FALLBACK_MODEL || 'groq/compound-mini',
+    groq: process.env.FALLBACK_MODEL || 'openai/gpt-oss-20b',
     longcat: process.env.LONGCAT_MODEL || 'longcat-default',
   },
-  fallbackOrder: ['gemini', 'cerebras', 'groq', 'longcat'],
+  fallbackOrder: ['groq', 'cerebras', 'longcat'], // Gemini excluded while paused
   fallbackEnabled: process.env.FALLBACK_AI_ENABLED !== 'false',
   autoRoutingEnabled: true,
   cachingEnabled: true,
@@ -266,22 +266,6 @@ export function setCachedResponse(options: AiGenerateOptions, result: AiGenerate
 
 // Task-Aware Provider Recommendation
 export function getRecommendedProviderForTask(task?: AITaskCategory): { primary: AIProviderId; fallbackList: AIProviderId[] } {
-  switch (task) {
-    case 'prism':
-      // PRISM requires authoritative scientific reasoning with source grounding
-      return { primary: 'gemini', fallbackList: ['cerebras', 'groq', 'longcat'] };
-    case 'doubt_solver':
-      return { primary: 'gemini', fallbackList: ['cerebras', 'groq', 'longcat'] };
-    case 'bulk_mcq':
-    case 'classification':
-      // Cerebras has sub-100ms ultra-fast inference for bulk MCQs
-      return { primary: 'cerebras', fallbackList: ['groq', 'gemini', 'longcat'] };
-    case 'flashcard':
-      return { primary: 'cerebras', fallbackList: ['groq', 'gemini', 'longcat'] };
-    case 'mnemonic':
-    case 'explanation':
-      return { primary: 'groq', fallbackList: ['cerebras', 'gemini', 'longcat'] };
-    default:
-      return { primary: 'gemini', fallbackList: ['cerebras', 'groq', 'longcat'] };
-  }
+  // Gemini is paused, Groq is the primary provider across all tasks
+  return { primary: 'groq', fallbackList: ['cerebras', 'longcat'] };
 }
