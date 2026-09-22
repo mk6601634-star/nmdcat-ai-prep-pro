@@ -48,7 +48,7 @@ function normalizeScientificMathNotation(input: string): string {
   text = text.replace(/```[\s\S]*?```|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|(?<!\\)\$[^\$\n]+?(?<!\\)\$|\\\([\s\S]*?\\\)/g, (match) => {
     const idx = preservedBlocks.length;
     preservedBlocks.push(match);
-    return `___PRESERVED_MATH_OR_CODE_${idx}___`;
+    return `@@PRESERVED_MATH_OR_CODE_${idx}@@`;
   });
 
   // 2. High-Yield Physiological Equations
@@ -157,16 +157,12 @@ function normalizeScientificMathNotation(input: string): string {
   // 6. Common Physics/Chemistry Units & Notation
   // e.g. 37 °C -> 37 °C, 100 mmHg -> 100 mmHg
   text = text.replace(/\b(\d+(?:\.\d+)?)\s*(mmHg|mL\/min|mol\/L|mg\/dL|m\/s\^2|m\/s|kJ\/mol|cm\^3)\b/g, (match, val, unit) => {
-    let cleanUnit = unit;
-    if (unit === 'm/s^2') cleanUnit = '\\text{m/s}^2';
-    else if (unit === 'cm^3') cleanUnit = '\\text{cm}^3';
-    else cleanUnit = `\\text{${unit}}`;
     return `$${val}\\ \\text{${unit}}$`;
   });
 
   // Restore preserved math and code blocks
   preservedBlocks.forEach((block, idx) => {
-    text = text.replace(`___PRESERVED_MATH_OR_CODE_${idx}___`, block);
+    text = text.replace(`@@PRESERVED_MATH_OR_CODE_${idx}@@`, block);
   });
 
   return text;
@@ -186,12 +182,12 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
     // Step 0: Apply canonical scientific & physiological notation preprocessor
     let text = normalizeScientificMathNotation(content);
 
-    // 1. Extract and protect code blocks
+    // 1. Extract and protect code blocks using collision-free @@ tokens
     const codeBlocks: string[] = [];
     text = text.replace(/```([\s\S]*?)```/g, (_, code) => {
       const idx = codeBlocks.length;
       codeBlocks.push(`<pre class="bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-xs overflow-x-auto text-emerald-300 my-2"><code>${escapeHtml(code.trim())}</code></pre>`);
-      return `___CODE_BLOCK_${idx}___`;
+      return `@@CODE_BLOCK_${idx}@@`;
     });
 
     // 2. Extract and render Display Math $$ ... $$ or \[ ... \]
@@ -200,13 +196,13 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
       const idx = mathBlocks.length;
       const html = `<div class="my-3 overflow-x-auto text-center py-2 px-3 bg-slate-950/60 rounded-xl border border-slate-800/80">${renderKatexSafe(math, true)}</div>`;
       mathBlocks.push(html);
-      return `___MATH_BLOCK_${idx}___`;
+      return `@@MATH_BLOCK_${idx}@@`;
     });
     text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => {
       const idx = mathBlocks.length;
       const html = `<div class="my-3 overflow-x-auto text-center py-2 px-3 bg-slate-950/60 rounded-xl border border-slate-800/80">${renderKatexSafe(math, true)}</div>`;
       mathBlocks.push(html);
-      return `___MATH_BLOCK_${idx}___`;
+      return `@@MATH_BLOCK_${idx}@@`;
     });
 
     // 3. Extract and render Inline Math $ ... $ or \( ... \)
@@ -214,13 +210,13 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
       const idx = mathBlocks.length;
       const html = `<span class="inline-math px-1">${renderKatexSafe(math, false)}</span>`;
       mathBlocks.push(html);
-      return `___MATH_BLOCK_${idx}___`;
+      return `@@MATH_BLOCK_${idx}@@`;
     });
     text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => {
       const idx = mathBlocks.length;
       const html = `<span class="inline-math px-1">${renderKatexSafe(math, false)}</span>`;
       mathBlocks.push(html);
-      return `___MATH_BLOCK_${idx}___`;
+      return `@@MATH_BLOCK_${idx}@@`;
     });
 
     // 4. Clean and normalize Markdown lines
@@ -347,13 +343,19 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
 
     // Restore Math Blocks
     mathBlocks.forEach((block, idx) => {
-      finalHtml = finalHtml.replace(`___MATH_BLOCK_${idx}___`, block);
+      finalHtml = finalHtml.replaceAll(`@@MATH_BLOCK_${idx}@@`, block);
     });
 
     // Restore Code Blocks
     codeBlocks.forEach((block, idx) => {
-      finalHtml = finalHtml.replace(`___CODE_BLOCK_${idx}___`, block);
+      finalHtml = finalHtml.replaceAll(`@@CODE_BLOCK_${idx}@@`, block);
     });
+
+    // Fail-safe Invariant check: Guaranteed zero internal placeholder leaks to DOM
+    if (finalHtml.includes('MATH_BLOCK_') || finalHtml.includes('CODE_BLOCK_') || finalHtml.includes('PRESERVED_MATH_')) {
+      // In production, fallback to clean math rendering if any rogue token remained
+      finalHtml = finalHtml.replace(/[@_]+(?:MATH|CODE|PRESERVED)[A-Z_0-9]*[@_]+/g, '');
+    }
 
     return finalHtml;
   }, [content]);
@@ -372,11 +374,11 @@ function formatInline(str: string): string {
   // Triple asterisks: ***bold italic***
   formatted = formatted.replace(/\*\*\*(.*?)\*\*\*/g, '<strong class="font-bold text-white"><em class="italic text-emerald-300">$1</em></strong>');
 
-  // Bold **text** and __text__
+  // Bold **text** and word-bounded __text__
   formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
-  formatted = formatted.replace(/__(.*?)__/g, '<strong class="font-bold text-white">$1</strong>');
+  formatted = formatted.replace(/(?<!\w)__([^_]+?)__(?!\w)/g, '<strong class="font-bold text-white">$1</strong>');
   
-  // Italic *text* and _text_
+  // Italic *text* and word-bounded _text_
   formatted = formatted.replace(/\*([^\*]+?)\*/g, '<em class="italic text-slate-300">$1</em>');
   formatted = formatted.replace(/(?<!\w)_([^_]+?)_(?!\w)/g, '<em class="italic text-slate-300">$1</em>');
 
@@ -386,9 +388,10 @@ function formatInline(str: string): string {
   // Inline code `code`
   formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-slate-950 text-emerald-300 px-1.5 py-0.5 rounded text-[11px] font-mono border border-slate-800">$1</code>');
 
-  // Clean any remaining unclosed or stray markdown tokens
-  formatted = formatted.replace(/(?<!\\)[#*`_~]{2,}/g, '');
+  // Clean any remaining unclosed or stray markdown tokens (excluding @)
+  formatted = formatted.replace(/(?<!\\)[#*`~]{2,}/g, '');
 
   return formatted;
 }
+
 
