@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PrismMCQ } from './prismTypes';
 import { PrismConflictBadge } from './PrismConflictBadge';
+import { FormattedMathContent } from '../FormattedMathContent';
 import { MCQQuestion, SavedMistake, ExamAttempt, SubjectType } from '../../types';
 import { 
   CheckCircle2, 
@@ -229,9 +230,9 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Question pagination pills */}
-          <div className="flex items-center gap-1 overflow-x-auto max-w-[240px] sm:max-w-none">
+          <div className="flex items-center gap-1 overflow-x-auto max-w-[240px] sm:max-w-none no-scrollbar">
             {questions.map((q, idx) => {
               const isAnswered = userAnswers[idx] !== undefined;
               const isCurrent = currentIndex === idx;
@@ -250,7 +251,7 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
                 <button
                   key={idx}
                   onClick={() => setCurrentIndex(idx)}
-                  className={`w-7 h-7 rounded-lg text-xs font-bold border transition-all ${btnClass}`}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold border transition-all shrink-0 ${btnClass}`}
                 >
                   {idx + 1}
                 </button>
@@ -262,7 +263,7 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
             <button
               onClick={handleSubmitQuiz}
               disabled={answeredCount === 0}
-              className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-md hover:scale-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-md hover:scale-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               Submit ({answeredCount}/{totalQ})
             </button>
@@ -274,7 +275,7 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
                 setAnalyses({});
                 if (onResetQuiz) onResetQuiz();
               }}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Retry</span>
@@ -321,9 +322,9 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
         </div>
 
         {/* Question Text */}
-        <p className="text-base font-bold text-slate-100 leading-relaxed">
-          {currentQ.question}
-        </p>
+        <div className="text-base font-bold text-slate-100 leading-relaxed">
+          <FormattedMathContent content={currentQ.question} />
+        </div>
 
         {/* Options List */}
         <div className="space-y-2.5">
@@ -355,7 +356,9 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
                 <span className="w-5 h-5 rounded-md bg-slate-900 border border-slate-700 flex items-center justify-center font-bold shrink-0 text-[11px]">
                   {letter}
                 </span>
-                <span className="flex-1 mt-0.5 leading-relaxed">{optText}</span>
+                <div className="flex-1 mt-0.5 leading-relaxed">
+                  <FormattedMathContent content={optText} />
+                </div>
                 {isSubmitted && isCorrect && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
                 {isSubmitted && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
               </div>
@@ -371,14 +374,16 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
                 <CheckCircle2 className="w-4 h-4" />
                 Verified Scientific Explanation:
               </span>
-              <p className="text-slate-300 leading-relaxed">{currentQ.explanation}</p>
+              <div className="text-slate-300 leading-relaxed">
+                <FormattedMathContent content={currentQ.explanation} />
+              </div>
 
               {currentQ.examTrap && (
                 <div className="mt-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] flex items-start gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <strong>Common Distractor Trap: </strong>
-                    {currentQ.examTrap}
+                    <FormattedMathContent content={currentQ.examTrap} className="inline" />
                   </div>
                 </div>
               )}
@@ -421,16 +426,17 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1">
                     <span className="font-bold text-rose-400 block">Identified Misconception:</span>
-                    <p className="text-slate-300">{analyses[currentIndex].whyYouWereWrong}</p>
+                    <FormattedMathContent content={analyses[currentIndex].whyYouWereWrong} className="text-slate-300" />
                   </div>
                   <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1">
                     <span className="font-bold text-emerald-400 block">Actual Scientific Rule:</span>
-                    <p className="text-slate-300">{analyses[currentIndex].correctConcept}</p>
+                    <FormattedMathContent content={analyses[currentIndex].correctConcept} className="text-slate-300" />
                   </div>
                 </div>
                 {analyses[currentIndex].recommendedRevision && (
                   <div className="bg-indigo-900/40 p-2.5 rounded-lg border border-indigo-500/30 text-indigo-200 text-[11px]">
-                    <strong>Target Revision: </strong>{analyses[currentIndex].recommendedRevision}
+                    <strong>Target Revision: </strong>
+                    <FormattedMathContent content={analyses[currentIndex].recommendedRevision} className="inline" />
                   </div>
                 )}
               </div>
@@ -461,3 +467,4 @@ export const PrismQuizRunner: React.FC<PrismQuizRunnerProps> = ({
     </div>
   );
 };
+

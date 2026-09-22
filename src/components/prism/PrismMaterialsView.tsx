@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PrismGeneratedMaterials } from './prismTypes';
 import { PrismConflictBadge } from './PrismConflictBadge';
+import { FormattedMathContent } from '../FormattedMathContent';
 import { 
   Layers, 
   Sparkles, 
@@ -111,7 +112,7 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Subtab Selector for Materials */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto no-scrollbar">
         {[
           { id: 'flashcards', label: `Flashcards (${materials.flashcards?.length || 0})`, icon: Layers },
           { id: 'mindmap', label: 'Mind Map Visual', icon: Network },
@@ -163,15 +164,21 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
                   {!isFlipped ? (
                     <div className="space-y-2">
                       <span className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold">Question Prompt</span>
-                      <p className="text-sm font-bold text-white">{fc.front}</p>
+                      <div className="text-sm font-bold text-white">
+                        <FormattedMathContent content={fc.front} />
+                      </div>
                       <span className="text-[10px] text-slate-500 block">(Click to flip for answer)</span>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       <span className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Verified Explanation</span>
-                      <p className="text-xs text-slate-200 leading-relaxed">{fc.back}</p>
+                      <div className="text-xs text-slate-200 leading-relaxed text-left">
+                        <FormattedMathContent content={fc.back} />
+                      </div>
                       {fc.explanation && (
-                        <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-800/60">{fc.explanation}</p>
+                        <div className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-800/60 text-left">
+                          <FormattedMathContent content={fc.explanation} />
+                        </div>
                       )}
                     </div>
                   )}
@@ -237,7 +244,9 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
                   </div>
                   <h5 className="font-bold text-white text-sm line-clamp-1">{node.label}</h5>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">{node.description}</p>
+                <div className="text-xs text-slate-300 leading-relaxed">
+                  <FormattedMathContent content={node.description} />
+                </div>
 
                 {node.subNodes && node.subNodes.length > 0 && (
                   <div className="space-y-1.5 pt-2 border-t border-slate-900">
@@ -245,7 +254,9 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
                     {node.subNodes.map((sub, sIdx) => (
                       <div key={sub.id || sIdx} className="bg-slate-900/70 p-2 rounded-lg border border-slate-800/80 text-[11px] space-y-0.5">
                         <strong className="text-cyan-300 block">{sub.label}</strong>
-                        <p className="text-slate-400 text-[10px]">{sub.detail}</p>
+                        <div className="text-slate-400 text-[10px]">
+                          <FormattedMathContent content={sub.detail} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -276,7 +287,9 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
                   <p className="text-base font-black text-amber-300 tracking-wider">{mn.mnemonic}</p>
                 </div>
 
-                <p className="text-xs text-slate-300 leading-relaxed">{mn.explanation}</p>
+                <div className="text-xs text-slate-300 leading-relaxed">
+                  <FormattedMathContent content={mn.explanation} />
+                </div>
 
                 <div className="pt-2 border-t border-slate-800 flex justify-end">
                   <button
@@ -313,10 +326,12 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
                     <span className="text-xs font-bold text-cyan-400">{f.title}</span>
                     <span className="text-[10px] text-slate-400">{f.chapter}</span>
                   </div>
-                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-sm text-emerald-300 font-bold text-center">
-                    {f.formula}
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
+                    <FormattedMathContent content={f.formula} className="text-emerald-300 font-bold" />
                   </div>
-                  <p className="text-xs text-slate-300">{f.derivationSummary}</p>
+                  <div className="text-xs text-slate-300">
+                    <FormattedMathContent content={f.derivationSummary} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -339,10 +354,12 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
                     <span className="text-xs font-bold text-cyan-400">{r.reactionName}</span>
                     <span className="text-[10px] text-slate-400">{r.chapter}</span>
                   </div>
-                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-xs text-emerald-300 font-bold">
-                    {r.chemicalEquation}
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <FormattedMathContent content={r.chemicalEquation} className="text-emerald-300 font-bold" />
                   </div>
-                  <p className="text-xs text-slate-300">{r.mechanism}</p>
+                  <div className="text-xs text-slate-300">
+                    <FormattedMathContent content={r.mechanism} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -352,3 +369,4 @@ export const PrismMaterialsView: React.FC<PrismMaterialsViewProps> = ({
     </div>
   );
 };
+

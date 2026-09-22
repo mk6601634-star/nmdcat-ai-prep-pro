@@ -32,6 +32,7 @@ import {
   ArrowRight,
   ExternalLink
 } from 'lucide-react';
+import { FormattedMathContent } from './FormattedMathContent';
 import { 
   subscribeToPublishedFormulas, 
   subscribeToPublishedReactions, 
@@ -50,6 +51,7 @@ import {
   subscribeToUserDefinitions,
   deleteUserContent 
 } from '../lib/firestoreService';
+
 import { aiFetch, getAiFriendlyMessage } from '../lib/aiRequest';
 import { 
   FormulaItem, 
@@ -1302,9 +1304,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
                 </div>
 
                 <div className="bg-slate-950 p-4 rounded-xl border border-indigo-500/20 text-center">
-                  <code className="text-base font-mono font-bold text-indigo-300 tracking-wide">
-                    {f.formula}
-                  </code>
+                  <FormattedMathContent content={f.formula} className="text-base font-bold text-indigo-300 tracking-wide" />
                 </div>
 
                 {f.variables && f.variables.length > 0 && (
@@ -1312,7 +1312,9 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
                     <span className="font-semibold text-slate-400 uppercase tracking-wider text-[10px]">Variables:</span>
                     <ul className="list-disc list-inside space-y-1 pl-1 text-slate-300">
                       {f.variables.map((v, idx) => (
-                        <li key={idx}>{v}</li>
+                        <li key={idx}>
+                          <FormattedMathContent content={v} className="inline" />
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -1321,11 +1323,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2 border-t border-slate-800">
                   <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
                     <span className="text-indigo-400 font-semibold block mb-1">Units & Dimension</span>
-                    <span className="text-slate-300">{f.unitsAndDimensions}</span>
+                    <FormattedMathContent content={f.unitsAndDimensions} className="text-slate-300" />
                   </div>
                   <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
                     <span className="text-amber-400 font-semibold block mb-1">Exam Application</span>
-                    <span className="text-slate-300">{f.applications}</span>
+                    <FormattedMathContent content={f.applications} className="text-slate-300" />
                   </div>
                 </div>
 
@@ -1334,7 +1336,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold block">Common Exam Trap:</span>
-                      <span>{f.commonMistakes}</span>
+                      <FormattedMathContent content={f.commonMistakes} />
                     </div>
                   </div>
                 )}
@@ -1378,23 +1380,21 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
 
                 <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/20">
                   <span className="text-xs text-slate-400 block mb-1 font-semibold">Equation:</span>
-                  <code className="text-sm sm:text-base font-mono font-bold text-emerald-400">
-                    {r.chemicalEquation}
-                  </code>
+                  <FormattedMathContent content={r.chemicalEquation} className="text-sm sm:text-base font-bold text-emerald-400" />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                     <span className="text-indigo-400 font-bold block">Mechanism Type</span>
-                    <p className="text-slate-300">{r.mechanism}</p>
+                    <FormattedMathContent content={r.mechanism} className="text-slate-300" />
                   </div>
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                     <span className="text-cyan-400 font-bold block">Conditions & Catalyst</span>
-                    <p className="text-slate-300">{r.catalysts} ({r.conditions})</p>
+                    <FormattedMathContent content={`${r.catalysts} (${r.conditions})`} className="text-slate-300" />
                   </div>
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                     <span className="text-amber-400 font-bold block">Exceptions & Traps</span>
-                    <p className="text-slate-300">{r.importantExceptions}</p>
+                    <FormattedMathContent content={r.importantExceptions} className="text-slate-300" />
                   </div>
                 </div>
               </div>

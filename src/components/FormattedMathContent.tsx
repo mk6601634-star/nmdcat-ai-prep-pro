@@ -34,6 +34,145 @@ function escapeHtml(str: string): string {
 }
 
 /**
+ * Normalizes plain-text scientific, physiological, chemical, and mathematical expressions
+ * so that expressions without explicit $ delimiters (e.g. from PRISM, databases, textbooks)
+ * are cleanly upgraded to LaTeX before markdown and math extraction.
+ */
+function normalizeScientificMathNotation(input: string): string {
+  if (!input) return '';
+
+  let text = input;
+
+  // 1. Protect existing LaTeX delimiters ($$, $, \[, \]) and code blocks (```)
+  const preservedBlocks: string[] = [];
+  text = text.replace(/```[\s\S]*?```|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|(?<!\\)\$[^\$\n]+?(?<!\\)\$|\\\([\s\S]*?\\\)/g, (match) => {
+    const idx = preservedBlocks.length;
+    preservedBlocks.push(match);
+    return `___PRESERVED_MATH_OR_CODE_${idx}___`;
+  });
+
+  // 2. High-Yield Physiological Equations
+  // e.g. V̇A = (PACO2 - PH2O)/K or V.A = (Pao2 - Ph2o)/K or VA = (PaCO2 - PH2O)/k
+  text = text.replace(/\b(V̇A|V\.A|V̇O2|V̇CO2|Vmax|Km)\s*=\s*([^\n\.,;]+)/gi, (match, lhs, rhs) => {
+    let cleanLhs = lhs;
+    if (/V̇A|V\.A/i.test(lhs)) cleanLhs = '\\dot{V}_{\\text{A}}';
+    else if (/V̇O2/i.test(lhs)) cleanLhs = '\\dot{V}_{\\text{O}_2}';
+    else if (/V̇CO2/i.test(lhs)) cleanLhs = '\\dot{V}_{\\text{CO}_2}';
+    else if (/Vmax/i.test(lhs)) cleanLhs = 'V_{\\max}';
+    else if (/Km/i.test(lhs)) cleanLhs = 'K_{\\text{m}}';
+
+    // Format fraction rhs like (A - B)/C
+    let cleanRhs = rhs.trim();
+    cleanRhs = cleanRhs
+      .replace(/PaO2|Pao2/gi, 'P_{\\text{a}\\text{O}_2}')
+      .replace(/PAO2|Pao2/gi, 'P_{\\text{A}\\text{O}_2}')
+      .replace(/PaCO2|Paco2/gi, 'P_{\\text{a}\\text{CO}_2}')
+      .replace(/PACO2|Paco2/gi, 'P_{\\text{A}\\text{CO}_2}')
+      .replace(/PvO2|Pvo2/gi, 'P_{\\text{v}\\text{O}_2}')
+      .replace(/PH2O|Ph2o/gi, 'P_{\\text{H}_2\\text{O}}');
+
+    const fracMatch = cleanRhs.match(/^\((.*?)\)\s*\/\s*([a-zA-Z0-9_\{\}\\]+)$/);
+    if (fracMatch) {
+      cleanRhs = `\\frac{${fracMatch[1]}}{${fracMatch[2]}}`;
+    }
+
+    return `$${cleanLhs} = ${cleanRhs}$`;
+  });
+
+  // 3. Isolated Physiological Gas Pressures & Variables
+  // PaO2, PAO2, PaCO2, PACO2, PvO2, PH2O, pKa, pKb, pH, pOH, Vmax, Km, Ka, Kb, Kw, Kp, Kc
+  text = text.replace(/\b(PaO2|PAO2|PaCO2|PACO2|PvO2|PH2O)\b/g, (match) => {
+    switch (match.toUpperCase()) {
+      case 'PAO2': return '$P_{\\text{a}\\text{O}_2}$';
+      case 'PACO2': return '$P_{\\text{a}\\text{CO}_2}$';
+      case 'PVO2': return '$P_{\\text{v}\\text{O}_2}$';
+      case 'PH2O': return '$P_{\\text{H}_2\\text{O}}$';
+      default: return match;
+    }
+  });
+
+  // Handle case variations for PAO2 vs PaO2
+  text = text.replace(/\b(P[Aa]O2|P[Aa]CO2)\b/g, (match) => {
+    if (match.startsWith('PA')) {
+      return match.includes('CO') ? '$P_{\\text{A}\\text{CO}_2}$' : '$P_{\\text{A}\\text{O}_2}$';
+    }
+    return match.includes('CO') ? '$P_{\\text{a}\\text{CO}_2}$' : '$P_{\\text{a}\\text{O}_2}$';
+  });
+
+  // Equilibrium & Kinetic Constants
+  text = text.replace(/\b(Vmax|Km|pKa|pKb|pOH|Ka|Kb|Kw|Kp|Kc)\b/g, (match) => {
+    switch (match) {
+      case 'Vmax': return '$V_{\\max}$';
+      case 'Km': return '$K_{\\text{m}}$';
+      case 'pKa': return '$\\text{p}K_{\\text{a}}$';
+      case 'pKb': return '$\\text{p}K_{\\text{b}}$';
+      case 'pOH': return '$\\text{pOH}$';
+      case 'Ka': return '$K_{\\text{a}}$';
+      case 'Kb': return '$K_{\\text{b}}$';
+      case 'Kw': return '$K_{\\text{w}}$';
+      case 'Kp': return '$K_{\\text{p}}$';
+      case 'Kc': return '$K_{\\text{c}}$';
+      default: return match;
+    }
+  });
+
+  // 4. Common Chemical Formulas & Ions (Safe boundary checks)
+  // H2O, CO2, O2, N2, H2SO4, HNO3, HCl, NaOH, NaCl, CaCO3, Ca(OH)2, HCO3-, SO4 2-, PO4 3-, Ca2+, Mg2+, Na+, K+, Cl-, NH4+, CH4, C6H12O6
+  text = text.replace(/\b(H2O|CO2|H2SO4|HNO3|CaCO3|C6H12O6|CH4|NH4\+|HCO3\-)\b/g, (match) => {
+    switch (match) {
+      case 'H2O': return '$\\text{H}_2\\text{O}$';
+      case 'CO2': return '$\\text{CO}_2$';
+      case 'H2SO4': return '$\\text{H}_2\\text{SO}_4$';
+      case 'HNO3': return '$\\text{HNO}_3$';
+      case 'CaCO3': return '$\\text{CaCO}_3$';
+      case 'C6H12O6': return '$\\text{C}_6\\text{H}_{12}\\text{O}_6$';
+      case 'CH4': return '$\\text{CH}_4$';
+      case 'NH4+': return '$\\text{NH}_4^+$';
+      case 'HCO3-': return '$\\text{HCO}_3^-$';
+      default: return match;
+    }
+  });
+
+  // Polyatomic and monoatomic ions: Ca2+, Mg2+, Na+, K+, Cl-, SO4 2-, SO4^2-, PO4 3-, PO4^3-
+  text = text.replace(/\b(Ca2\+|Mg2\+|Fe2\+|Fe3\+|Zn2\+|Cu2\+|Al3\+|Na\+|K\+|Cl\-)\b/g, (match) => {
+    const el = match.slice(0, -2);
+    const charge = match.slice(-2);
+    if (charge === '2+' || charge === '3+') {
+      return `$\\text{${el}}^{${charge}}$`;
+    }
+    const singleEl = match.slice(0, -1);
+    const singleCharge = match.slice(-1);
+    return `$\\text{${singleEl}}^{${singleCharge}}$`;
+  });
+
+  text = text.replace(/\b(SO4\s*2\-|SO4\^2\-|SO4\-2)\b/gi, '$\\text{SO}_4^{2-}$');
+  text = text.replace(/\b(PO4\s*3\-|PO4\^3\-|PO4\-3)\b/gi, '$\\text{PO}_4^{3-}$');
+  text = text.replace(/\b(NO3\-)\b/gi, '$\\text{NO}_3^-$');
+
+  // 5. Scientific Powers & Exponents (e.g. 10^-6, 10-6 in scientific contexts, 10^3, 3 x 10^8)
+  text = text.replace(/(\d+(?:\.\d+)?)\s*(?:[x×\*]\s*)?10\^([+-]?\d+)/g, '$$$1 \\times 10^{$2}$$');
+  text = text.replace(/\b10\^([+-]?\d+)/g, '$$10^{$1}$$');
+  text = text.replace(/\b10\-(\d{1,2})\b/g, '$$10^{-$1}$$'); // e.g. 10-6 -> 10^-6
+
+  // 6. Common Physics/Chemistry Units & Notation
+  // e.g. 37 °C -> 37 °C, 100 mmHg -> 100 mmHg
+  text = text.replace(/\b(\d+(?:\.\d+)?)\s*(mmHg|mL\/min|mol\/L|mg\/dL|m\/s\^2|m\/s|kJ\/mol|cm\^3)\b/g, (match, val, unit) => {
+    let cleanUnit = unit;
+    if (unit === 'm/s^2') cleanUnit = '\\text{m/s}^2';
+    else if (unit === 'cm^3') cleanUnit = '\\text{cm}^3';
+    else cleanUnit = `\\text{${unit}}`;
+    return `$${val}\\ \\text{${unit}}$`;
+  });
+
+  // Restore preserved math and code blocks
+  preservedBlocks.forEach((block, idx) => {
+    text = text.replace(`___PRESERVED_MATH_OR_CODE_${idx}___`, block);
+  });
+
+  return text;
+}
+
+/**
  * Parses markdown text while extracting and rendering math expressions (LaTeX / KaTeX)
  * and cleaning excessive hashes, horizontal rules, and raw syntax.
  */
@@ -44,7 +183,8 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
   const renderedHtml = useMemo(() => {
     if (!content) return '';
 
-    let text = content;
+    // Step 0: Apply canonical scientific & physiological notation preprocessor
+    let text = normalizeScientificMathNotation(content);
 
     // 1. Extract and protect code blocks
     const codeBlocks: string[] = [];
@@ -251,3 +391,4 @@ function formatInline(str: string): string {
 
   return formatted;
 }
+

@@ -571,13 +571,13 @@ export const AiTutor: React.FC<AiTutorProps> = ({
           <div className="lg:col-span-3 flex h-[680px] flex-col overflow-hidden rounded-[24px] border border-slate-800/80 bg-slate-900/90 shadow-2xl relative">
             
             {/* Top Toolbar: Subject & Teaching Strategy */}
-            <div className="p-3.5 bg-slate-950/80 border-b border-slate-800 flex flex-col gap-2.5">
-              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
+            <div className="p-3 bg-slate-950/90 border-b border-slate-800 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
                 {/* Mobile History Toggle & Subject Selector */}
-                <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 max-w-full custom-scrollbar py-0.5">
+                <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 max-w-full no-scrollbar py-0.5">
                   <button
                     onClick={() => setShowHistoryDrawer(true)}
-                    className="lg:hidden px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 whitespace-nowrap"
+                    className="lg:hidden px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 whitespace-nowrap shadow-sm"
                   >
                     <History className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Chats</span>
@@ -588,9 +588,9 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                     <button
                       key={sub}
                       onClick={() => setSubject(sub)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 whitespace-nowrap ${
+                      className={`text-[11px] px-2.5 py-1.5 rounded-lg font-bold transition-all shrink-0 whitespace-nowrap ${
                         subject === sub 
-                          ? 'bg-emerald-500 text-slate-950 shadow-sm' 
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm font-black' 
                           : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                       }`}
                     >
@@ -601,7 +601,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
 
                 <button
                   onClick={handleNewConversation}
-                  className="hidden sm:flex px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg items-center gap-1 border border-slate-700 transition-all shrink-0 whitespace-nowrap"
+                  className="hidden sm:flex px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg items-center gap-1 border border-slate-700 transition-all shrink-0 whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5 text-emerald-400" />
                   <span>New Chat</span>
@@ -609,8 +609,8 @@ export const AiTutor: React.FC<AiTutorProps> = ({
               </div>
 
               {/* Teaching Strategy Mode Tabs */}
-              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-1.5 border-t border-slate-800/80">
-                <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 max-w-full custom-scrollbar py-0.5">
+              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-800/80">
+                <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 max-w-full no-scrollbar py-0.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase mr-1 shrink-0">Strategy:</span>
                   {[
                     { id: 'standard', label: 'Standard' },

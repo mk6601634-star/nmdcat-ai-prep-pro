@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PrismKnowledgeLayer, PrismClaim, PrismSource } from './prismTypes';
 import { PrismConflictBadge } from './PrismConflictBadge';
+import { FormattedMathContent } from '../FormattedMathContent';
 import { 
   ShieldCheck, 
   FileText, 
@@ -49,7 +50,7 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
               <p className="text-[11px] text-slate-400">Strictly source-audited against PMDC syllabus & peer-reviewed science</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-semibold">
               {knowledgeLayer.sources.length} Sources
             </span>
@@ -64,15 +65,16 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
           </div>
         </div>
 
-        <p className="text-xs text-slate-300 leading-relaxed">
-          {knowledgeLayer.verifiedSummary || 'Knowledge synthesized and mapped into source-traceable claims and deduction rules.'}
-        </p>
+        <FormattedMathContent
+          content={knowledgeLayer.verifiedSummary || 'Knowledge synthesized and mapped into source-traceable claims and deduction rules.'}
+          className="text-xs text-slate-300 leading-relaxed"
+        />
       </div>
 
       {/* 2. Textbook vs Science Conflict Resolution Matrix */}
       {knowledgeLayer.textbookConflicts.length > 0 && (
         <div className="bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-950 border border-amber-500/40 rounded-2xl p-5 shadow-2xl space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Scale className="w-5 h-5 text-amber-400" />
               <h4 className="text-sm font-bold text-amber-300">Textbook ↔ Science Conflict Matrix (Rule of Non-Silent Correction)</h4>
@@ -94,22 +96,22 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
                       <BookOpen className="w-3.5 h-3.5" />
                       Prescribed Textbook Convention:
                     </span>
-                    <p className="text-slate-200">{conflict.textbookVersion}</p>
+                    <FormattedMathContent content={conflict.textbookVersion} className="text-slate-200" />
                   </div>
                   <div className="bg-slate-900/90 p-3 rounded-lg border border-emerald-500/30 space-y-1">
                     <span className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px]">
                       <Sparkles className="w-3.5 h-3.5" />
                       Current Scientific Literature:
                     </span>
-                    <p className="text-slate-200">{conflict.scientificVersion}</p>
+                    <FormattedMathContent content={conflict.scientificVersion} className="text-slate-200" />
                   </div>
                 </div>
 
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs flex items-start gap-2.5">
                   <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
+                  <div className="space-y-1 flex-1">
                     <span className="font-bold text-amber-300">Actionable PMDC Exam Guidance:</span>
-                    <p className="text-slate-300">{conflict.recommendationForStudent}</p>
+                    <FormattedMathContent content={conflict.recommendationForStudent} className="text-slate-300" />
                   </div>
                 </div>
               </div>
@@ -144,9 +146,9 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
                 </div>
                 <h5 className="font-bold text-slate-100 line-clamp-1">{src.title}</h5>
                 <p className="text-[11px] text-slate-400 line-clamp-1">Origin: {src.origin}</p>
-                <p className="text-[10px] text-slate-300/80 line-clamp-2 italic bg-slate-950/50 p-1.5 rounded">
-                  "{src.contentSnippet}"
-                </p>
+                <div className="text-[10px] text-slate-300/80 line-clamp-2 italic bg-slate-950/50 p-1.5 rounded">
+                  <FormattedMathContent content={src.contentSnippet} />
+                </div>
               </div>
             );
           })}
@@ -164,12 +166,12 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
             <p className="text-[11px] text-slate-400 mt-0.5">Every claim preserves strict scientific and contextual qualifiers</p>
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shrink-0 ${
                   selectedCategory === cat
                     ? 'bg-cyan-500 text-slate-950 font-bold'
                     : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
@@ -207,7 +209,9 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
                         </span>
                       )}
                     </div>
-                    <p className="font-semibold text-slate-200 text-sm mt-1">{claim.statement}</p>
+                    <div className="font-semibold text-slate-200 text-sm mt-1">
+                      <FormattedMathContent content={claim.statement} />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 text-slate-400">
@@ -221,7 +225,7 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
                     {claim.notes && (
                       <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-slate-300">
                         <strong className="text-cyan-400">Audit Notes: </strong>
-                        {claim.notes}
+                        <FormattedMathContent content={claim.notes} className="inline" />
                       </div>
                     )}
 
@@ -257,15 +261,17 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
                 <span className="text-[10px] font-bold text-indigo-400 uppercase px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30">
                   {rule.subject} Core Rule
                 </span>
-                <p className="font-bold text-slate-200 text-sm">{rule.ruleStatement}</p>
+                <div className="font-bold text-slate-200 text-sm">
+                  <FormattedMathContent content={rule.ruleStatement} />
+                </div>
                 <div className="text-[11px] text-slate-300">
                   <strong className="text-emerald-400">Conditions: </strong>
-                  {rule.applicationConditions}
+                  <FormattedMathContent content={rule.applicationConditions} className="inline" />
                 </div>
                 {rule.exceptions?.length > 0 && (
                   <div className="text-[11px] text-rose-300">
                     <strong className="text-rose-400">Exceptions: </strong>
-                    {rule.exceptions.join(', ')}
+                    <FormattedMathContent content={rule.exceptions.join(', ')} className="inline" />
                   </div>
                 )}
               </div>
@@ -276,3 +282,4 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
     </div>
   );
 };
+
