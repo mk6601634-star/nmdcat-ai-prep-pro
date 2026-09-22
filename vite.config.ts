@@ -25,6 +25,7 @@ export default defineConfig(() => {
           manualChunks: {
             'vendor-react': ['react', 'react-dom'],
             'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            'vendor-katex': ['katex'],
             'vendor-icons': ['lucide-react'],
             'vendor-charts': ['recharts'],
             'vendor-motion': ['motion', 'canvas-confetti']

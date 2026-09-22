@@ -761,21 +761,6 @@ export function subscribeToPublishedMcqs(onUpdate: (items: Array<MCQQuestion & {
   const collectionRef = collection(db, adminCollections.mcqs);
   const q = query(collectionRef, where('status', '==', 'PUBLISHED'));
 
-  // Immediate initial getDocs for instant zero-delay load
-  getDocs(q).then((snapshot) => {
-    if (!snapshot.empty) {
-      const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
-      snapshot.forEach((d) => {
-        const data = d.data() as any;
-        items.push({ ...data, id: data.id || d.id, status: data.status || 'PUBLISHED' });
-      });
-      items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      onUpdate(items);
-    }
-  }).catch((err) => {
-    handleError('Notice on initial published MCQs getDocs:', err);
-  });
-
   return onSnapshot(q, (snapshot) => {
     const items: Array<MCQQuestion & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => {

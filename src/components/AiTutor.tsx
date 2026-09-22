@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Sparkles, 
   Send, 
@@ -49,6 +49,70 @@ interface AiTutorProps {
 }
 
 const DEFAULT_GREETING = "Hello future doctor! I am your AI NMDCAT Medical Tutor. Ask any question in Biology, Chemistry, Physics, English, or Logical Reasoning. Select your preferred teaching mode (Standard, Socratic, Step-by-Step, Analogy, or Teach Until Mastery) to guide our lesson.";
+
+interface ChatMessageItemProps {
+  msg: AiChatMessage;
+  onCopy: (text: string) => void;
+  onSpeech: (text: string) => void;
+  isSpeaking: boolean;
+}
+
+const ChatMessageItem = React.memo<ChatMessageItemProps>(({ msg, onCopy, onSpeech, isSpeaking }) => {
+  const isUser = msg.sender === 'user';
+  return (
+    <div className={`flex gap-3 max-w-3xl ${isUser ? 'ml-auto flex-row-reverse' : ''}`}>
+      {/* Avatar */}
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-md ${
+        isUser ? 'bg-emerald-500 text-slate-950' : 'bg-indigo-600 text-white'
+      }`}>
+        {isUser ? 'You' : <Sparkles className="w-4 h-4" />}
+      </div>
+
+      {/* Message Bubble */}
+      <div className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-lg ${
+        isUser
+          ? 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/30 rounded-tr-none'
+          : 'bg-slate-800/95 text-slate-200 border border-slate-700/80 rounded-tl-none space-y-2'
+      }`}>
+        {/* Mode Badge for AI message */}
+        {msg.modeUsed && !isUser && (
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 uppercase tracking-wider">
+              Mode: {msg.modeUsed}
+            </span>
+          </div>
+        )}
+
+        {/* Content with KaTeX Mathematical & Chemical rendering */}
+        <FormattedMathContent content={msg.text} />
+
+        {/* Message Footer: Timestamp & Actions */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 mt-2 pt-1.5 border-t border-slate-700/40">
+          <span className="shrink-0">{msg.time}</span>
+          {!isUser && (
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => onCopy(msg.text)}
+                className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
+                title="Copy response"
+              >
+                <Copy className="w-3 h-3" />
+                <span>Copy</span>
+              </button>
+              <button
+                onClick={() => onSpeech(msg.text)}
+                className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-bold transition-colors"
+              >
+                {isSpeaking ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                <span>{isSpeaking ? 'Stop' : 'Speak'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export const AiTutor: React.FC<AiTutorProps> = ({
   savedMistakes = [],
@@ -205,7 +269,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
   };
 
   // 6. Speech Synthesis
-  const handleSpeech = (text: string) => {
+  const handleSpeech = useCallback((text: string) => {
     if ('speechSynthesis' in window) {
       if (isSpeaking) {
         window.speechSynthesis.cancel();
@@ -225,7 +289,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
         window.speechSynthesis.speak(utterance);
       }
     }
-  };
+  }, [isSpeaking]);
 
   // 7. Send Chat Message with Full Conversation Context Memory
   const handleSendMessage = async (queryText?: string) => {
@@ -410,11 +474,11 @@ export const AiTutor: React.FC<AiTutorProps> = ({
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
+  }, []);
 
   // Mode Details
   const modeMetadata: Record<AiTeachingMode, { title: string; desc: string; badge: string; color: string }> = {
@@ -452,49 +516,59 @@ export const AiTutor: React.FC<AiTutorProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 overflow-hidden rounded-[28px] border border-indigo-500/20 bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-950 p-6 shadow-[0_24px_80px_-32px_rgba(99,102,241,0.35)]">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-indigo-300 text-[11px] font-semibold uppercase tracking-[0.25em]">
-            <Sparkles className="w-4 h-4 text-emerald-400" />
-            <span>PMDC AI Medical Tutor • Groq & KaTeX Powered</span>
+      {/* Header & Mode Selector */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/80 p-5 rounded-[24px] border border-slate-800 shadow-xl backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl text-white shadow-lg shadow-indigo-500/20">
+            <Brain className="w-7 h-7" />
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <span>AI Multi-Mode Tutor & Doubt Solver</span>
-            <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-mono">
-              Memory Active
-            </span>
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-300">
-            Real conversation memory, professional mathematical & chemical typesetting, and 5 distinct teaching strategies.
-          </p>
+          <div>
+            <h2 className="text-xl font-black text-white flex items-center gap-2">
+              AI NMDCAT Tutor & Clinical Mentor
+              <span className="px-2 py-0.5 text-[10px] uppercase font-mono tracking-wider bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30">
+                Active Memory
+              </span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              PMDC-aligned multi-mode tutor with pedagogical reasoning and active mastery tracking.
+            </p>
+          </div>
         </div>
 
-        {/* Sub-tab Toggle */}
-        <div className="flex flex-wrap sm:flex-nowrap w-full sm:w-auto rounded-2xl border border-slate-700/70 bg-slate-900/80 p-1 shadow-inner gap-1">
+        {/* Sub-tab Navigation */}
+        <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800">
           <button
             onClick={() => setActiveSubTab('chat')}
-            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-              activeSubTab === 'chat' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeSubTab === 'chat'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            AI Chat Tutor
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Interactive Chat</span>
           </button>
           <button
             onClick={() => setActiveSubTab('imageDoubt')}
-            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-              activeSubTab === 'imageDoubt' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeSubTab === 'imageDoubt'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            Image & Notes Solver
+            <Image className="w-3.5 h-3.5" />
+            <span>Diagram Solver</span>
           </button>
           <button
             onClick={() => setActiveSubTab('mnemonic')}
-            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-              activeSubTab === 'mnemonic' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeSubTab === 'mnemonic'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            Mnemonics
+            <Lightbulb className="w-3.5 h-3.5" />
+            <span>Mnemonic Forge</span>
           </button>
         </div>
       </div>
@@ -623,10 +697,10 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                     return (
                       <button
                         key={m.id}
-                        onClick={() => setTeachingMode(m.id as AiTeachingMode)}
-                        className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 whitespace-nowrap border ${
+                        onClick={() => handleModeChange(m.id as AiTeachingMode)}
+                        className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all border shrink-0 whitespace-nowrap ${
                           isSelected
-                            ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
+                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                             : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
                         }`}
                       >
@@ -658,65 +732,15 @@ export const AiTutor: React.FC<AiTutorProps> = ({
               onScroll={handleScroll}
               className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 custom-scrollbar"
             >
-              {messages.map((msg, idx) => {
-                const isUser = msg.sender === 'user';
-                return (
-                  <div
-                    key={msg.id || idx}
-                    className={`flex gap-3 max-w-3xl ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
-                  >
-                    {/* Avatar */}
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-md ${
-                      isUser ? 'bg-emerald-500 text-slate-950' : 'bg-indigo-600 text-white'
-                    }`}>
-                      {isUser ? 'You' : <Sparkles className="w-4 h-4" />}
-                    </div>
-
-                    {/* Message Bubble */}
-                    <div className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-lg ${
-                      isUser
-                        ? 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/30 rounded-tr-none'
-                        : 'bg-slate-800/95 text-slate-200 border border-slate-700/80 rounded-tl-none space-y-2'
-                    }`}>
-                      {/* Mode Badge for AI message */}
-                      {msg.modeUsed && !isUser && (
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 uppercase tracking-wider">
-                            Mode: {msg.modeUsed}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Content with KaTeX Mathematical & Chemical rendering */}
-                      <FormattedMathContent content={msg.text} />
-
-                      {/* Message Footer: Timestamp & Actions */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 mt-2 pt-1.5 border-t border-slate-700/40">
-                        <span className="shrink-0">{msg.time}</span>
-                        {!isUser && (
-                          <div className="flex items-center gap-3 shrink-0">
-                            <button
-                              onClick={() => copyToClipboard(msg.text)}
-                              className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
-                              title="Copy response"
-                            >
-                              <Copy className="w-3 h-3" />
-                              <span>Copy</span>
-                            </button>
-                            <button
-                              onClick={() => handleSpeech(msg.text)}
-                              className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-bold transition-colors"
-                            >
-                              {isSpeaking ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                              <span>{isSpeaking ? 'Stop' : 'Speak'}</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {messages.map((msg, idx) => (
+                <ChatMessageItem
+                  key={msg.id || idx}
+                  msg={msg}
+                  onCopy={copyToClipboard}
+                  onSpeech={handleSpeech}
+                  isSpeaking={isSpeaking}
+                />
+              ))}
 
               <AiActionStatus
                 statusMessage={chatAction.statusMessage}

@@ -7,18 +7,41 @@ interface FormattedMathContentProps {
   className?: string;
 }
 
+// High-performance LRU Caches for zero-latency instant formula & markdown rendering
+const KATEX_CACHE = new Map<string, string>();
+const MAX_KATEX_CACHE_SIZE = 2000;
+
+const CONTENT_RENDER_CACHE = new Map<string, string>();
+const MAX_CONTENT_CACHE_SIZE = 600;
+
 /**
- * Safely render KaTeX math with fallback
+ * Safely render KaTeX math with high-performance LRU memoization
  */
 function renderKatexSafe(tex: string, displayMode: boolean): string {
+  const trimmed = tex.trim();
+  const cacheKey = `${displayMode ? 'D' : 'I'}:${trimmed}`;
+  const cached = KATEX_CACHE.get(cacheKey);
+  if (cached !== undefined) {
+    KATEX_CACHE.delete(cacheKey);
+    KATEX_CACHE.set(cacheKey, cached);
+    return cached;
+  }
+
   try {
-    return katex.renderToString(tex.trim(), {
+    const rendered = katex.renderToString(trimmed, {
       displayMode,
       throwOnError: false,
       output: 'htmlAndMathml',
       strict: false,
       trust: false
     });
+
+    if (KATEX_CACHE.size >= MAX_KATEX_CACHE_SIZE) {
+      const oldestKey = KATEX_CACHE.keys().next().value;
+      if (oldestKey) KATEX_CACHE.delete(oldestKey);
+    }
+    KATEX_CACHE.set(cacheKey, rendered);
+    return rendered;
   } catch {
     return `<span class="font-mono text-emerald-300">${escapeHtml(tex)}</span>`;
   }
@@ -186,12 +209,19 @@ function normalizeScientificMathNotation(input: string): string {
  * Parses markdown text while extracting and rendering math expressions (LaTeX / KaTeX)
  * and cleaning excessive hashes, horizontal rules, and raw syntax.
  */
-export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
+export const FormattedMathContent: React.FC<FormattedMathContentProps> = React.memo(({
   content,
   className = ''
 }) => {
   const renderedHtml = useMemo(() => {
     if (!content) return '';
+
+    const cachedContent = CONTENT_RENDER_CACHE.get(content);
+    if (cachedContent !== undefined) {
+      CONTENT_RENDER_CACHE.delete(content);
+      CONTENT_RENDER_CACHE.set(content, cachedContent);
+      return cachedContent;
+    }
 
     // Step 0: Apply canonical scientific & physiological notation preprocessor
     let text = normalizeScientificMathNotation(content);
@@ -371,6 +401,12 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
       finalHtml = finalHtml.replace(/[@_]+(?:MATH|CODE|PRESERVED)[A-Z_0-9]*[@_]+/g, '');
     }
 
+    if (CONTENT_RENDER_CACHE.size >= MAX_CONTENT_CACHE_SIZE) {
+      const oldestKey = CONTENT_RENDER_CACHE.keys().next().value;
+      if (oldestKey) CONTENT_RENDER_CACHE.delete(oldestKey);
+    }
+    CONTENT_RENDER_CACHE.set(content, finalHtml);
+
     return finalHtml;
   }, [content]);
 
@@ -380,7 +416,7 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
       dangerouslySetInnerHTML={{ __html: renderedHtml }}
     />
   );
-};
+});
 
 function formatInline(str: string): string {
   let formatted = escapeHtml(str);

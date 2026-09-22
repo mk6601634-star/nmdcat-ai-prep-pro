@@ -251,6 +251,7 @@ export class CerebrasProvider implements AIProvider {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(12000),
         });
 
         if (!res.ok) {
@@ -265,6 +266,7 @@ export class CerebrasProvider implements AIProvider {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify(requestBody),
+              signal: AbortSignal.timeout(12000),
             });
             if (retryRes.ok) {
               const retryData: any = await retryRes.json();
@@ -434,6 +436,7 @@ export class GroqProvider implements AIProvider {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(12000),
           });
 
           if (!res.ok) {
@@ -449,6 +452,7 @@ export class GroqProvider implements AIProvider {
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(requestBody),
+                signal: AbortSignal.timeout(12000),
               });
             }
 
@@ -586,6 +590,7 @@ export class LongCatProvider implements AIProvider {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(12000),
         });
 
         if (!res.ok) {
@@ -599,6 +604,7 @@ export class LongCatProvider implements AIProvider {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify(requestBody),
+              signal: AbortSignal.timeout(12000),
             });
             if (retryRes.ok) {
               const retryData: any = await retryRes.json();
