@@ -857,7 +857,7 @@ app.post("/api/image-doubt-solver", async (req, res) => {
     if (!subjectVal.valid) {
       return res.status(400).json({ error: subjectVal.error, message: subjectVal.message });
     }
-    const validatedSubject = subjectVal.subject || "General Science / NMDCAT";
+    const validatedSubject = subjectVal.subject!;
 
     const textPrompt = `Analyze this image (Textbook page, handwritten notes, or diagram) for an NMDCAT ${validatedSubject} student:
       User Request: "${requestPrompt}"
@@ -1215,7 +1215,14 @@ const explainHandler = async (req: any, res: any) => {
     const { questionText, options, correctAnswer, userChoice, subject } = req.body;
     
     const subjectValidation = validateSubjectParam(subject, true);
-    const validatedSubject = subjectValidation.valid ? subjectValidation.subject : 'General Science';
+    if (!subjectValidation.valid) {
+      return res.status(subjectValidation.status).json({
+        error: subjectValidation.error,
+        code: subjectValidation.code,
+        message: subjectValidation.message
+      });
+    }
+    const validatedSubject = subjectValidation.subject;
 
     const prompt = `Examine this NMDCAT ${validatedSubject} question:
     SUBJECT: ${validatedSubject.toUpperCase()} (AUTHORITATIVE)
@@ -2143,7 +2150,7 @@ app.post("/api/generate-reactions", async (req, res) => {
   try {
     const { category = 'Organic', chapter = 'General', topic, difficultyMode = 'NORMAL', subject } = req.body;
 
-    const subjectVal = validateSubjectParam(subject || 'Chemistry', false);
+    const subjectVal = validateSubjectParam(subject, false);
     if (!subjectVal.valid) {
       return res.status(400).json({ error: subjectVal.error, message: subjectVal.message });
     }
