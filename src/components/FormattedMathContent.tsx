@@ -35,6 +35,7 @@ function escapeHtml(str: string): string {
 
 /**
  * Parses markdown text while extracting and rendering math expressions (LaTeX / KaTeX)
+ * and cleaning excessive hashes, horizontal rules, and raw syntax.
  */
 export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
   content,
@@ -126,6 +127,13 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i].trim();
 
+      // Skip horizontal divider lines entirely (---, ***, ___)
+      if (/^[-*_]{3,}$/.test(line)) {
+        flushList();
+        flushTable();
+        continue;
+      }
+
       // Check for Table Row
       if (line.startsWith('|') && line.endsWith('|')) {
         flushList();
@@ -136,15 +144,25 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
         flushTable();
       }
 
-      // Check for Headings (Max 2 levels)
-      if (line.startsWith('### ') || line.startsWith('## ') || line.startsWith('# ')) {
+      // Check for Headings (#, ##, ###, ####, #####, ######)
+      if (/^#{1,6}\s+/.test(line) || /^#{1,6}[^\s#]/.test(line)) {
         flushList();
-        const headingText = line.replace(/^#+\s*/, '');
-        processedLines.push(`<h3 class="text-sm md:text-base font-bold text-emerald-400 mt-4 mb-2 tracking-tight flex items-center gap-1.5">${formatInline(headingText)}</h3>`);
+        const headingText = line.replace(/^#{1,6}\s*/, '').trim();
+        if (headingText) {
+          processedLines.push(`<h3 class="text-sm md:text-base font-bold text-emerald-400 mt-4 mb-1.5 tracking-tight flex items-center gap-1.5">${formatInline(headingText)}</h3>`);
+        }
         continue;
       }
 
-      // Check for Bullet list
+      // Check for Blockquote (> text)
+      if (line.startsWith('>')) {
+        flushList();
+        const quoteText = line.replace(/^>\s*/, '').trim();
+        processedLines.push(`<div class="border-l-2 border-indigo-500 bg-indigo-500/10 px-3 py-2 rounded-r-xl my-2 text-slate-300 text-xs sm:text-sm italic">${formatInline(quoteText)}</div>`);
+        continue;
+      }
+
+      // Check for Bullet list (- , * , • )
       if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
         const itemText = line.replace(/^[-*•]\s*/, '');
         if (!inList || listType !== 'ul') {
@@ -157,8 +175,8 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
         continue;
       }
 
-      // Check for Numbered list
-      const numMatch = line.match(/^(\d+)\.\s*(.*)$/);
+      // Check for Numbered list (1. , 2. )
+      const numMatch = line.match(/^(\d+)[\.\)]\s*(.*)$/);
       if (numMatch) {
         const itemText = numMatch[2];
         if (!inList || listType !== 'ol') {
@@ -174,7 +192,7 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
       flushList();
 
       if (line.length === 0) {
-        processedLines.push('<div class="h-2"></div>');
+        processedLines.push('<div class="h-1.5"></div>');
         continue;
       }
 
@@ -211,14 +229,25 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = ({
 function formatInline(str: string): string {
   let formatted = escapeHtml(str);
 
-  // Bold **text**
+  // Triple asterisks: ***bold italic***
+  formatted = formatted.replace(/\*\*\*(.*?)\*\*\*/g, '<strong class="font-bold text-white"><em class="italic text-emerald-300">$1</em></strong>');
+
+  // Bold **text** and __text__
   formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
+  formatted = formatted.replace(/__(.*?)__/g, '<strong class="font-bold text-white">$1</strong>');
   
-  // Italic *text*
+  // Italic *text* and _text_
   formatted = formatted.replace(/\*([^\*]+?)\*/g, '<em class="italic text-slate-300">$1</em>');
+  formatted = formatted.replace(/(?<!\w)_([^_]+?)_(?!\w)/g, '<em class="italic text-slate-300">$1</em>');
+
+  // Strikethrough ~~text~~
+  formatted = formatted.replace(/~~(.*?)~~/g, '<del class="line-through text-slate-500">$1</del>');
 
   // Inline code `code`
   formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-slate-950 text-emerald-300 px-1.5 py-0.5 rounded text-[11px] font-mono border border-slate-800">$1</code>');
+
+  // Clean any remaining unclosed or stray markdown tokens
+  formatted = formatted.replace(/(?<!\\)[#*`_~]{2,}/g, '');
 
   return formatted;
 }
