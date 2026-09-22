@@ -1000,6 +1000,113 @@ Return ONLY valid JSON.`;
   }
 });
 
+// API Endpoint 1e: General-Purpose Custom Notes Builder
+const customNoteHandler = async (req: any, res: any) => {
+  try {
+    const {
+      topic,
+      subject = 'Biology',
+      chapter,
+      detailLevel = 'STANDARD',
+      noteType = 'STUDY NOTES',
+      customInstructions,
+      pastedContent
+    } = req.body;
+
+    if (!topic || typeof topic !== 'string' || !topic.trim()) {
+      return res.status(400).json({ error: "Topic is required" });
+    }
+
+    const detailInstructions = {
+      'QUICK': 'Generate concise, high-speed summary notes focused on core definitions, quick facts, and rapid recall points.',
+      'STANDARD': 'Generate balanced, comprehensive study notes with clear conceptual explanations, diagrams/equations, and exam applications.',
+      'DETAILED': 'Generate in-depth, thorough textbook-level notes covering foundational mechanisms, derivations, edge cases, and detailed examples.',
+      'VERY DETAILED': 'Generate master-class, highly detailed notes with exhaustive conceptual breakdowns, multi-step mechanisms, clinical/real-world links, and complete mathematical derivations.'
+    }[detailLevel as string] || 'Generate balanced, comprehensive study notes.';
+
+    const noteTypeInstructions = {
+      'STUDY NOTES': 'Structured complete study guide with clear headings, bullet points, core concepts, mechanisms, and exam takeaways.',
+      'REVISION NOTES': 'High-density revision summary with bulleted key facts, must-memorize numbers/formulas, and rapid memory checkpoints.',
+      'CONCEPT EXPLANATION': 'Deep first-principles intuition, intuitive step-by-step breakdown, analogies, and intuitive physical/chemical models.',
+      'CHEAT SHEET': 'Compact high-yield tables, key formula sheets, rapid-fire facts, and zero fluff.',
+      'HIGH-YIELD NOTES': 'Targeted for top exam scorers: PMDC past paper recurring themes, tricky traps, common student mistakes, and scoring secrets.',
+      'BEGINNER NOTES': 'Clear, jargon-free explanations building from the ground up with relatable examples before introducing technical terminology.',
+      'COMPARISON': 'Structured comparative matrix / tables contrasting key related concepts, differences, similarities, and distinguishing criteria.',
+      'FORMULA NOTES': 'Complete formula breakdown with variable definitions, SI units, dimensional analysis, proportionalities, and numerical shortcut tricks.',
+      'CUSTOM': 'Custom tailored notes adapted to the user specific focus and guidance.'
+    }[noteType as string] || 'Standard structured study notes.';
+
+    const prompt = `You are a world-class PMDC / NMDCAT professor and master medical educator.
+Create premium, publication-quality study notes for the following topic:
+
+TOPIC: "${topic.trim()}"
+SUBJECT: ${subject}
+${chapter ? `CHAPTER / UNIT: ${chapter}` : ''}
+NOTE TYPE: ${noteType} (${noteTypeInstructions})
+DETAIL LEVEL: ${detailLevel} (${detailInstructions})
+${customInstructions ? `USER INSTRUCTIONS: ${customInstructions}` : ''}
+${pastedContent ? `REFERENCE CONTENT / TEXTBOOK EXCERPT TO INCORPORATE:\n${pastedContent}\n` : ''}
+
+CRITICAL FORMATTING & MATHEMATICAL REQUIREMENTS:
+1. MATHEMATICAL & CHEMICAL NOTATION:
+   - Format ALL mathematical and chemical formulas in standard LaTeX / KaTeX notation.
+   - Use inline math \`$variable$\` or \`$formula$\` for inline symbols (e.g. \`$E = mc^2$\`, \`$v = f\\lambda$\`, \`$\\text{pH} = -\\log[\\text{H}^+]$\`, \`$\\Delta G = \\Delta H - T\\Delta S$\`).
+   - Use display math \`$$...$$\` on separate lines for main equations, derivations, and chemical equations.
+   - Never write raw broken math characters or poorly formatted fractions. Use LaTeX \`\\frac{a}{b}\`, \`\\sqrt{x}\`, \`\\times\`, \`\\rightarrow\`.
+
+2. STRUCTURED MARKDOWN:
+   - Use clean Markdown headings (# for Main Title, ## for Sections, ### for Subsections).
+   - Use Markdown tables for comparisons and parameter lists.
+   - Include:
+     * Executive Overview / Core Definition
+     * Key Principles, Mechanisms & Detailed Theory
+     * High-Yield Formulas, Equations, & Values (with KaTeX formatting)
+     * PMDC / NMDCAT Exam Traps & Examiner Pitfalls (what examiners trick students with)
+     * Mnemonics & Memory Hacks (smart recall aids)
+     * Rapid Review Checklist (bullet points for quick revision)
+
+Return a JSON response with:
+{
+  "title": "Clean, descriptive note title",
+  "summary": "2-3 sentence executive summary of the topic",
+  "tags": ["Tag1", "Tag2", "Tag3"],
+  "content": "Full markdown content with KaTeX math equations"
+}
+Return ONLY valid JSON.`;
+
+    const result = await callWithFallback({
+      prompt,
+      temperature: 0.7,
+      maxTokens: 4096,
+      jsonMode: true,
+    });
+
+    const parsed = extractJsonFromText(result.text) || {};
+    const content = parsed.content || result.text;
+    const title = parsed.title || topic;
+    const summary = parsed.summary || `Comprehensive ${noteType.toLowerCase()} on ${topic}.`;
+    const tags = Array.isArray(parsed.tags) ? parsed.tags : [subject, noteType, 'NMDCAT'];
+
+    res.json({
+      success: true,
+      title,
+      summary,
+      tags,
+      content,
+      noteType,
+      detailLevel,
+      subject,
+      chapter: chapter || 'General',
+      provider: result.provider
+    });
+  } catch (error: any) {
+    return handleAiError(res, error, "Failed to generate custom notes");
+  }
+};
+
+app.post("/api/generate-custom-note", customNoteHandler);
+app.post("/api/ai/custom-note", customNoteHandler);
+
 // API Endpoint 2: Detailed Question Solution Explainer
 const explainHandler = async (req: any, res: any) => {
   try {

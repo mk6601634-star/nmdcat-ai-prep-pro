@@ -354,57 +354,229 @@ export async function deleteDailyTarget(userId: string, targetId: string) {
 }
 
 // ------------------
-// User Notes and Custom MCQs
+// User Notes Persistence & Offline Cache
 // ------------------
+
+const LOCAL_NOTES_KEY = 'nmdcat_user_notes_local_backup';
+
+export function getLocalUserNotes(userId?: string): UserNote[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_NOTES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    if (userId && userId !== 'anonymous') {
+      return parsed.filter(n => n.userId === userId || !n.userId);
+    }
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalUserNotes(notes: UserNote[]): void {
+  try {
+    localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(notes));
+  } catch (err) {
+    console.warn('Failed to save notes to localStorage cache:', err);
+  }
+}
+
+/**
+ * Save or create a user note in Firestore
+ */
+export async function saveUserNote(userId: string, note: Partial<UserNote> & { title: string; content: string; subject: SubjectType }): Promise<{ success: boolean; noteId?: string; error?: string }> {
+  if (!userId || userId === 'anonymous') {
+    const noteId = note.id || `local_note_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullNote: UserNote = {
+      id: noteId,
+      userId: 'anonymous',
+      title: note.title,
+      subject: note.subject,
+      chapter: note.chapter || 'General',
+      topic: note.topic || note.title,
+      detailLevel: note.detailLevel || 'STANDARD',
+      noteType: note.noteType || 'STUDY NOTES',
+      content: note.content,
+      summary: note.summary || '',
+      tags: note.tags || [],
+      createdAt: note.createdAt || timestampValue(),
+      updatedAt: timestampValue(),
+      lastModified: timestampValue(),
+      isAiGenerated: note.isAiGenerated ?? false,
+      customInstructions: note.customInstructions || ''
+    };
+    const localNotes = getLocalUserNotes();
+    const existingIdx = localNotes.findIndex(n => n.id === noteId);
+    if (existingIdx >= 0) {
+      localNotes[existingIdx] = fullNote;
+    } else {
+      localNotes.unshift(fullNote);
+    }
+    saveLocalUserNotes(localNotes);
+    return { success: true, noteId };
+  }
+
+  try {
+    const noteId = note.id || doc(collection(db, 'userNotes')).id;
+    const noteDocRef = doc(db, 'userNotes', noteId);
+    const timestamp = timestampValue();
+
+    const notePayload: UserNote = {
+      id: noteId,
+      userId,
+      title: note.title,
+      subject: note.subject,
+      chapter: note.chapter || 'General',
+      topic: note.topic || note.title,
+      topicId: note.topicId || '',
+      detailLevel: note.detailLevel || 'STANDARD',
+      noteType: note.noteType || 'STUDY NOTES',
+      content: note.content,
+      summary: note.summary || '',
+      tags: note.tags || [],
+      customInstructions: note.customInstructions || '',
+      isAiGenerated: note.isAiGenerated ?? false,
+      createdAt: note.createdAt || timestamp,
+      updatedAt: timestamp,
+      lastModified: timestamp
+    };
+
+    await setDoc(noteDocRef, notePayload);
+
+    // Also update local cache for instant offline read
+    const localNotes = getLocalUserNotes();
+    const idx = localNotes.findIndex(n => n.id === noteId);
+    if (idx >= 0) {
+      localNotes[idx] = notePayload;
+    } else {
+      localNotes.unshift(notePayload);
+    }
+    saveLocalUserNotes(localNotes);
+
+    return { success: true, noteId };
+  } catch (err: any) {
+    handleError('Error saving user note:', err);
+    // Offline fallback
+    const noteId = note.id || `offline_note_${Date.now()}`;
+    const fallbackNote: UserNote = {
+      id: noteId,
+      userId,
+      title: note.title,
+      subject: note.subject,
+      chapter: note.chapter || 'General',
+      content: note.content,
+      tags: note.tags || [],
+      detailLevel: note.detailLevel || 'STANDARD',
+      noteType: note.noteType || 'STUDY NOTES',
+      createdAt: note.createdAt || timestampValue(),
+      updatedAt: timestampValue(),
+      lastModified: timestampValue()
+    };
+    const localNotes = getLocalUserNotes();
+    localNotes.unshift(fallbackNote);
+    saveLocalUserNotes(localNotes);
+    return { success: true, noteId, error: err?.message };
+  }
+}
+
 export async function createUserNote(note: UserNote) {
-  if (!note.userId) return;
-  try {
-    const noteRef = doc(collection(db, 'userNotes'));
-    await setDoc(noteRef, {
-      ...note,
-      id: noteRef.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    return noteRef.id;
-  } catch (err) {
-    handleError('Error creating user note:', err);
-  }
+  const res = await saveUserNote(note.userId, note);
+  return res.noteId;
 }
 
-export async function updateUserNote(noteId: string, note: Partial<UserNote>) {
-  if (!noteId) return;
+/**
+ * Update an existing user note in Firestore
+ */
+export async function updateUserNote(noteId: string, userIdOrUpdate: string | Partial<UserNote>, maybeUpdate?: Partial<UserNote>): Promise<{ success: boolean; error?: string }> {
+  if (!noteId) return { success: false, error: 'Note ID is required' };
+
+  const userId = typeof userIdOrUpdate === 'string' ? userIdOrUpdate : '';
+  const update = typeof userIdOrUpdate === 'object' ? userIdOrUpdate : (maybeUpdate || {});
+
   try {
-    const noteRef = doc(db, 'userNotes', noteId);
-    await updateDoc(noteRef, {
-      ...note,
-      updatedAt: new Date().toISOString()
-    });
-  } catch (err) {
+    const timestamp = timestampValue();
+    if (userId && userId !== 'anonymous') {
+      const noteDocRef = doc(db, 'userNotes', noteId);
+      await updateDoc(noteDocRef, {
+        ...update,
+        updatedAt: timestamp,
+        lastModified: timestamp
+      });
+    }
+
+    // Update local cache
+    const localNotes = getLocalUserNotes();
+    const idx = localNotes.findIndex(n => n.id === noteId);
+    if (idx >= 0) {
+      localNotes[idx] = {
+        ...localNotes[idx],
+        ...update,
+        updatedAt: timestamp,
+        lastModified: timestamp
+      };
+      saveLocalUserNotes(localNotes);
+    }
+
+    return { success: true };
+  } catch (err: any) {
     handleError('Error updating user note:', err);
+    return { success: false, error: err?.message };
   }
 }
 
-export async function deleteUserNote(noteId: string) {
-  if (!noteId) return;
+/**
+ * Delete a user note
+ */
+export async function deleteUserNote(noteId: string, userId?: string): Promise<{ success: boolean; error?: string }> {
+  if (!noteId) return { success: false, error: 'Note ID is required' };
+
   try {
-    const noteRef = doc(db, 'userNotes', noteId);
-    await deleteDoc(noteRef);
-  } catch (err) {
+    if (userId && userId !== 'anonymous') {
+      await deleteDoc(doc(db, 'userNotes', noteId));
+    }
+
+    // Remove from local cache
+    const localNotes = getLocalUserNotes().filter(n => n.id !== noteId);
+    saveLocalUserNotes(localNotes);
+
+    return { success: true };
+  } catch (err: any) {
     handleError('Error deleting user note:', err);
+    return { success: false, error: err?.message };
   }
 }
 
+/**
+ * Subscribe to user notes
+ */
 export function subscribeToUserNotes(userId: string, onUpdate: (notes: UserNote[]) => void) {
-  if (!userId) return () => {};
+  if (!userId || userId === 'anonymous') {
+    const local = getLocalUserNotes('anonymous');
+    onUpdate(local);
+    return () => {};
+  }
+
   const q = query(collection(db, 'userNotes'), where('userId', '==', userId));
   return onSnapshot(q, (snapshot) => {
     const notes: UserNote[] = [];
     snapshot.forEach((d) => notes.push(d.data() as UserNote));
-    notes.sort((a, b) => new Date(b.lastModified || 0).getTime() - new Date(a.lastModified || 0).getTime());
-    onUpdate(notes);
+    notes.sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+    
+    // Merge with any local notes
+    const localNotes = getLocalUserNotes(userId);
+    const mergedMap = new Map<string, UserNote>();
+    notes.forEach(n => mergedMap.set(n.id, n));
+    localNotes.forEach(n => {
+      if (!mergedMap.has(n.id)) mergedMap.set(n.id, n);
+    });
+    const merged = Array.from(mergedMap.values()).sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+    
+    onUpdate(merged);
   }, (err) => {
     handleError('Error subscribing to user notes:', err);
+    // Fallback to local
+    onUpdate(getLocalUserNotes(userId));
   });
 }
 
@@ -1990,7 +2162,7 @@ export function subscribeToUserDefinitions(userId: string, onUpdate: (definition
  * Delete user-owned content
  */
 export async function deleteUserContent(
-  collectionName: 'userFlashcards' | 'userMindMaps' | 'userMnemonics' | 'userFormulas' | 'userReactions' | 'userDefinitions' | 'userPrismSessions',
+  collectionName: 'userFlashcards' | 'userMindMaps' | 'userMnemonics' | 'userFormulas' | 'userReactions' | 'userDefinitions' | 'userPrismSessions' | 'userNotes',
   docId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {

@@ -462,21 +462,45 @@ export interface CustomMCQ extends MCQQuestion {
   status?: AdminContentStatus;
 }
 
+export type NoteDetailLevel = 'QUICK' | 'STANDARD' | 'DETAILED' | 'VERY DETAILED';
+
+export type NoteType = 
+  | 'STUDY NOTES' 
+  | 'REVISION NOTES' 
+  | 'CONCEPT EXPLANATION' 
+  | 'CHEAT SHEET' 
+  | 'HIGH-YIELD NOTES' 
+  | 'BEGINNER NOTES' 
+  | 'COMPARISON' 
+  | 'FORMULA NOTES' 
+  | 'CUSTOM';
+
 export interface UserNote {
   id: string;
   userId: string;
   title: string;
   subject: SubjectType;
-  chapter: string;
+  chapter?: string;
+  topic?: string;
+  topicId?: string;
+  detailLevel?: NoteDetailLevel;
+  noteType?: NoteType;
   content: string;
+  summary?: string;
   tags: string[];
   highlightedText?: string[];
   voiceNoteUrl?: string;
   voiceDurationSeconds?: number;
   aiSummary?: string;
   autoRevisionNotes?: string[];
-  lastModified: string;
+  customInstructions?: string;
+  isAiGenerated?: boolean;
+  lastModified?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type UserCustomNote = UserNote;
 
 export interface BackupRecord {
   id: string;

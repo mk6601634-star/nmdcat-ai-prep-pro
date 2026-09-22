@@ -110,7 +110,7 @@ export const ResourceWorkspace: React.FC<ResourceWorkspaceProps> = ({
       )}
 
       {activeSubTab === 'notes' && (
-        <ConceptNotesExplorer />
+        <ConceptNotesExplorer firebaseUser={firebaseUser} onSignIn={onSignInGoogle} />
       )}
 
       {activeSubTab === 'flashcards' && (
