@@ -37,6 +37,11 @@ import {
 import UiCard from './UiCard';
 import { generateAiPlanFromActualData } from '../utils/aiPlanner';
 import NMDCAT_CONFIG from '../constants/nmdcatConfig';
+import {
+  calculateOverallAccuracy,
+  calculateReadinessScore,
+  calculateSubjectAnalytics
+} from '../utils/analyticsCalculations';
 
 export interface DashboardProps {
   topics: SyllabusTopic[];
@@ -88,17 +93,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const completedTargetsCount = dailyTargets.filter(t => t.completed).length;
   const targetPct = dailyTargets.length > 0 ? Math.round((completedTargetsCount / dailyTargets.length) * 100) : 0;
 
-  // Calculate total questions and scores from real examHistory
-  const totalQuestionsSolved = examHistory.reduce((acc, cur) => acc + (cur.totalQuestions || 0), 0);
-  const totalCorrect = examHistory.reduce((acc, cur) => acc + (cur.score || 0), 0);
-  const hasUserActivity = totalQuestionsSolved > 0;
+  // Deterministic calculation engine for dashboard metrics
+  const accuracyResult = calculateOverallAccuracy(examHistory);
+  const readinessResult = calculateReadinessScore(examHistory, savedMistakes);
+  const subjectAnalytics = calculateSubjectAnalytics(examHistory);
 
-  const overallProgressPct = hasUserActivity ? Math.round((totalCorrect / totalQuestionsSolved) * 100) : 0;
-  
-  // Calculate readiness score dynamically
-  const readinessPct = hasUserActivity 
-    ? parseFloat(Math.min(99.8, Math.max(10, overallProgressPct * 0.95 + Math.min(10, totalQuestionsSolved / 50) - Math.min(15, savedMistakes.length * 0.5))).toFixed(1))
-    : 0;
+  const hasUserActivity = accuracyResult.hasData;
+  const overallProgressPct = accuracyResult.accuracyPercentage;
+  const readinessPct = readinessResult.readinessScore;
 
   // Subject Progress Calculations dynamically from real user exam history
   const subjects: { name: SubjectType; icon: React.ElementType; color: string; pct: number }[] = (
@@ -110,11 +112,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       { name: 'Logical Reasoning' as SubjectType, icon: Brain, color: 'text-purple-400' }
     ]
   ).map(sub => {
-    const subAttempts = examHistory.filter(a => a.subject === sub.name);
-    const subSolved = subAttempts.reduce((acc, cur) => acc + (cur.totalQuestions || 0), 0);
-    const subScore = subAttempts.reduce((acc, cur) => acc + (cur.score || 0), 0);
-    const pct = subSolved > 0 ? Math.round((subScore / subSolved) * 100) : 0;
-    return { ...sub, pct };
+    const stats = subjectAnalytics[sub.name];
+    return { ...sub, pct: stats.accuracy };
   });
 
   const primaryActions = [

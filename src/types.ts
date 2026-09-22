@@ -223,6 +223,8 @@ export interface ExamAttempt {
   userAnswers: Record<string, number>;
   confidenceRatings?: Record<string, 'Low' | 'Medium' | 'High'>;
   mode?: 'Timed' | 'Untimed' | 'Full Simulation' | 'Adaptive' | 'Weak Area' | 'Rapid Fire';
+  sourceType?: 'mock_exam' | 'topic_quiz' | 'practice_drill' | 'past_paper' | 'ai_quiz' | 'prism';
+  pastPaperId?: string;
 }
 
 export interface SavedMistake {
@@ -597,4 +599,58 @@ export interface AiConversation {
   createdAt: string;
   updatedAt: string;
 }
+
+export type PastPaperSourceType =
+  | 'OFFICIAL_PDF'
+  | 'SCANNED_IMAGE'
+  | 'STRUCTURED_JSON'
+  | 'TEXT_DOCUMENT'
+  | 'USER_IMPORT'
+  | 'VERIFIED_OFFICIAL';
+
+export type PastPaperVerificationStatus =
+  | 'VERIFIED_OFFICIAL'
+  | 'SOURCE_UPLOADED'
+  | 'USER_IMPORTED'
+  | 'UNVERIFIED'
+  | 'EXTRACTION_PENDING';
+
+export interface PastPaperQuestion {
+  id: string;
+  pastPaperId: string;
+  originalQuestionNumber: number; // 1, 2, 3...
+  questionText: string;
+  options: [string, string, string, string] | string[];
+  correctAnswer: number | null; // 0=A, 1=B, 2=C, 3=D, or null if answer key not in source
+  hasOfficialAnswer: boolean;
+  subject?: SubjectType | 'Unknown';
+  topic?: string;
+  explanation?: string; // Optional reference/source explanation
+  sourcePage?: number;
+  sourceLocation?: string;
+  extractionConfidence?: number; // 0-100
+}
+
+export interface PastPaper {
+  id: string;
+  title: string;
+  year: number | string;
+  examName: string; // e.g. "NMDCAT", "MDCAT", "NUMS", "UHS"
+  conductingBody?: string; // e.g. "PMDC", "UHS", "SZABMU", "DUHS", "KMU"
+  paperVariant?: string; // e.g. "Code A", "Morning Session", "National"
+  sourceType: PastPaperSourceType;
+  sourceFileId?: string;
+  sourceFileName?: string;
+  sourceHash?: string; // Content hash for duplicate detection
+  uploadedAt: string;
+  uploadedBy?: string;
+  questionCount: number;
+  questions: PastPaperQuestion[];
+  hasAnswerKey: boolean;
+  extractionStatus: 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'READY';
+  verificationStatus: PastPaperVerificationStatus;
+  timeAllowedMinutes?: number;
+  userCompletedCount?: number;
+}
+
 

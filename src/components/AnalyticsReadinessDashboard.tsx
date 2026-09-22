@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { SubjectType, ExamAttempt, SavedMistake } from '../types';
+import {
+  calculateOverallAccuracy,
+  calculateReadinessScore,
+  calculateSubjectAnalytics
+} from '../utils/analyticsCalculations';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -43,48 +48,30 @@ export const AnalyticsReadinessDashboard: React.FC<AnalyticsReadinessDashboardPr
   const [activeModuleTab, setActiveModuleTab] = useState<'overview' | 'flashcards' | 'notes' | 'formulas' | 'reactions' | 'mindmaps' | 'ai'>('overview');
   const [showFormulaInfo, setShowFormulaInfo] = useState<string | null>(null);
 
-  // Dynamically calculate overall metrics from real exam attempts
-  const calculatedSolved = examAttempts.reduce((acc, cur) => acc + (cur.totalQuestions || 0), 0);
-  const calculatedScoreSum = examAttempts.reduce((acc, cur) => acc + (cur.score || 0), 0);
-  
-  const hasData = calculatedSolved > 0;
-  
-  const totalQuestionsSolved = calculatedSolved;
-  const totalCorrect = calculatedScoreSum;
-  const overallAccuracy = hasData ? parseFloat(((totalCorrect / totalQuestionsSolved) * 100).toFixed(1)) : 0;
-  
-  const totalTimeSec = examAttempts.reduce((acc, cur) => acc + (cur.timeSpentSeconds || 0), 0);
-  const avgSolvingTimeSec = hasData 
-    ? Math.round(totalTimeSec / calculatedSolved) 
-    : 0;
-    
-  // Dynamic Readiness Score calculation (Weighted formula based on accuracy, practice volume, and mistake count)
-  const mistakePenalty = Math.min(15, savedMistakes.length * 0.5);
-  const volumeBonus = Math.min(10, totalQuestionsSolved / 50);
-  const estimatedReadinessScore = hasData 
-    ? parseFloat(Math.min(99.8, Math.max(10, overallAccuracy * 0.95 + volumeBonus - mistakePenalty)).toFixed(1))
-    : 0;
-  
-  const retentionIndex = hasData
-    ? parseFloat(Math.min(98, Math.max(40, overallAccuracy * 0.98 + (savedMistakes.length < 5 ? 5 : -2))).toFixed(1))
-    : 0;
+  // Dynamically calculate overall metrics from real exam attempts using central engine
+  const accuracyResult = calculateOverallAccuracy(examAttempts);
+  const readinessResult = calculateReadinessScore(examAttempts, savedMistakes);
+  const subjectAnalytics = calculateSubjectAnalytics(examAttempts);
+
+  const hasData = accuracyResult.hasData;
+  const totalQuestionsSolved = accuracyResult.totalSolved;
+  const totalCorrect = accuracyResult.totalCorrect;
+  const overallAccuracy = accuracyResult.accuracyPercentage;
+  const avgSolvingTimeSec = readinessResult.avgSolvingSpeedSec;
+  const estimatedReadinessScore = readinessResult.readinessScore;
+  const retentionIndex = readinessResult.retentionIndex;
 
   // Dynamic Subject Mastery calculation from exam attempts
   const subjects: SubjectType[] = ['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'];
   
   const subjectMastery = subjects.reduce((acc, sub) => {
-    const subAttempts = examAttempts.filter(a => a.subject === sub);
-    const subSolved = subAttempts.reduce((s, a) => s + (a.totalQuestions || 0), 0);
-    const subScore = subAttempts.reduce((s, a) => s + (a.score || 0), 0);
-    
-    const accuracy = subSolved > 0 ? Math.round((subScore / subSolved) * 100) : 0;
-    const solved = subSolved;
-    const speedSec = subSolved > 0 
-      ? Math.round((subAttempts.reduce((s, a) => s + (a.timeSpentSeconds || 0), 0)) / subSolved) 
-      : 0;
+    const stats = subjectAnalytics[sub];
+    const accuracy = stats.accuracy;
+    const solved = stats.solved;
+    const speedSec = stats.speedSec;
     
     let masteryGrade = 'Not Started';
-    if (subSolved > 0) {
+    if (solved > 0) {
       if (accuracy >= 90) masteryGrade = 'KEMU Target Zone (90%+)';
       else if (accuracy >= 80) masteryGrade = 'High Competency';
       else if (accuracy >= 70) masteryGrade = 'Moderate Mastery';
@@ -97,12 +84,10 @@ export const AnalyticsReadinessDashboard: React.FC<AnalyticsReadinessDashboardPr
 
   // Dynamic Subject Chapter Scores calculated directly from actual exam attempts
   const getSubjectChapterScore = (subject: SubjectType) => {
-    const subAttempts = examAttempts.filter(a => a.subject === subject);
-    const subSolved = subAttempts.reduce((s, a) => s + (a.totalQuestions || 0), 0);
-    const subScore = subAttempts.reduce((s, a) => s + (a.score || 0), 0);
+    const stats = subjectAnalytics[subject];
     return {
-      score: subSolved > 0 ? Math.round((subScore / subSolved) * 100) : 0,
-      solved: subSolved
+      score: stats.accuracy,
+      solved: stats.solved
     };
   };
 

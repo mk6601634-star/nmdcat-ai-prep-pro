@@ -49,7 +49,8 @@ import {
   SavedAiQuiz,
   GeneratedQuestion,
   ImportJob,
-  AiConversation
+  AiConversation,
+  PastPaper
 } from '../types';
 import type { PrismSession } from '../components/prism/prismTypes';
 
@@ -2214,6 +2215,162 @@ export async function deleteUserPrismSession(sessionId: string): Promise<{ succe
 }
 
 // ------------------
+// Past Papers Vault (Authentic Source Documents)
+// ------------------
+const PAST_PAPERS_STORAGE_KEY = 'nmdcat_past_papers';
+
+export function getLocalPastPapers(): PastPaper[] {
+  try {
+    const raw = localStorage.getItem(PAST_PAPERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalPastPapers(papers: PastPaper[]) {
+  try {
+    localStorage.setItem(PAST_PAPERS_STORAGE_KEY, JSON.stringify(papers));
+  } catch (err) {
+    handleError('Error saving local past papers:', err);
+  }
+}
+
+export function subscribeToPastPapers(onUpdate: (papers: PastPaper[]) => void) {
+  const collectionRef = collection(db, 'pastPapers');
+  const q = query(collectionRef);
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const remotePapers: PastPaper[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data() as any;
+        remotePapers.push({ ...data, id: data.id || d.id });
+      });
+      remotePapers.sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''));
+
+      // Sync with local cache
+      const local = getLocalPastPapers();
+      const mergedMap = new Map<string, PastPaper>();
+      remotePapers.forEach((p) => mergedMap.set(p.id, p));
+      local.forEach((p) => {
+        if (!mergedMap.has(p.id)) mergedMap.set(p.id, p);
+      });
+
+      const merged = Array.from(mergedMap.values()).sort((a, b) =>
+        (b.uploadedAt || '').localeCompare(a.uploadedAt || '')
+      );
+      saveLocalPastPapers(merged);
+      onUpdate(merged);
+    },
+    (err) => {
+      handleError('Error subscribing to past papers:', err);
+      // Fallback to local cache
+      onUpdate(getLocalPastPapers());
+    }
+  );
+}
+
+export async function savePastPaper(
+  userId: string,
+  paper: PastPaper
+): Promise<{ success: boolean; id: string; duplicate?: boolean; error?: string }> {
+  const paperId = paper.id || `past_paper_${Date.now()}`;
+  const timestamp = timestampValue();
+
+  // Check duplicate by sourceHash
+  const localPapers = getLocalPastPapers();
+  if (paper.sourceHash) {
+    const existing = localPapers.find((p) => p.sourceHash === paper.sourceHash && p.id !== paperId);
+    if (existing) {
+      return {
+        success: false,
+        id: existing.id,
+        duplicate: true,
+        error: `Duplicate past paper detected. Matching document already exists: "${existing.title}".`
+      };
+    }
+  }
+
+  const payload: PastPaper = {
+    ...paper,
+    id: paperId,
+    uploadedAt: paper.uploadedAt || timestamp,
+    uploadedBy: userId || paper.uploadedBy || 'anonymous'
+  };
+
+  try {
+    if (userId && userId !== 'anonymous') {
+      const docRef = doc(db, 'pastPapers', paperId);
+      await setDoc(docRef, payload, { merge: true });
+    }
+
+    // Update local cache
+    const existingIndex = localPapers.findIndex((p) => p.id === paperId);
+    if (existingIndex >= 0) {
+      localPapers[existingIndex] = payload;
+    } else {
+      localPapers.unshift(payload);
+    }
+    saveLocalPastPapers(localPapers);
+
+    return { success: true, id: paperId };
+  } catch (err: any) {
+    handleError('Error saving past paper:', err);
+    // Offline local save fallback
+    const existingIndex = localPapers.findIndex((p) => p.id === paperId);
+    if (existingIndex >= 0) {
+      localPapers[existingIndex] = payload;
+    } else {
+      localPapers.unshift(payload);
+    }
+    saveLocalPastPapers(localPapers);
+    return { success: true, id: paperId, error: err?.message };
+  }
+}
+
+export async function deletePastPaper(paperId: string): Promise<{ success: boolean; error?: string }> {
+  if (!paperId) return { success: false, error: 'Paper ID is required' };
+
+  try {
+    const docRef = doc(db, 'pastPapers', paperId);
+    await deleteDoc(docRef);
+
+    const localPapers = getLocalPastPapers().filter((p) => p.id !== paperId);
+    saveLocalPastPapers(localPapers);
+
+    return { success: true };
+  } catch (err: any) {
+    handleError('Error deleting past paper:', err);
+    const localPapers = getLocalPastPapers().filter((p) => p.id !== paperId);
+    saveLocalPastPapers(localPapers);
+    return { success: true, error: err?.message };
+  }
+}
+
+export async function getPastPaperById(paperId: string): Promise<PastPaper | null> {
+  if (!paperId) return null;
+  const localPapers = getLocalPastPapers();
+  const local = localPapers.find((p) => p.id === paperId);
+  if (local) return local;
+
+  try {
+    const docRef = doc(db, 'pastPapers', paperId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as PastPaper;
+    }
+    return null;
+  } catch (err) {
+    handleError('Error getting past paper by ID:', err);
+    return null;
+  }
+}
+
+// ------------------
 // Firestore Health
 // ------------------
 export async function syncFirestoreNow(): Promise<boolean> {
@@ -2229,3 +2386,5 @@ export async function syncFirestoreNow(): Promise<boolean> {
     return false;
   }
 }
+
+

@@ -12,10 +12,19 @@ import {
   Sparkles,
   BarChart3,
   CheckCircle2,
-  Target
+  Target,
+  BookOpen,
+  Info
 } from 'lucide-react';
 import UiCard from './UiCard';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  calculateOverallAccuracy,
+  calculateEstimatedScore,
+  calculateSyllabusCoverage,
+  calculateSubjectAnalytics,
+  ALL_SUBJECTS
+} from '../utils/analyticsCalculations';
 
 export interface InsightsWorkspaceProps {
   activeSubTab: string;
@@ -30,22 +39,19 @@ export const InsightsWorkspace: React.FC<InsightsWorkspaceProps> = ({
   examHistory,
   topics
 }) => {
-  const totalQuestionsSolved = examHistory.reduce((acc, cur) => acc + (cur.totalQuestions || 0), 0);
-  const totalCorrect = examHistory.reduce((acc, cur) => acc + (cur.score || 0), 0);
-  const hasUserActivity = totalQuestionsSolved > 0;
+  // Deterministic Analytics Engine Calculations
+  const accuracyResult = calculateOverallAccuracy(examHistory);
+  const estimatedScoreResult = calculateEstimatedScore(examHistory);
+  const syllabusResult = calculateSyllabusCoverage(topics, examHistory);
+  const subjectStats = calculateSubjectAnalytics(examHistory);
 
-  const overallAccuracy = hasUserActivity ? Math.round((totalCorrect / totalQuestionsSolved) * 100) : 0;
-  const predictedScore = hasUserActivity ? Math.round((totalCorrect / totalQuestionsSolved) * 200) : 0;
-
-  const subjectNames: SubjectType[] = ['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'];
-  
-  const chartData = subjectNames.map(sub => {
-    const subAttempts = examHistory.filter(a => a.subject === sub);
-    const subSolved = subAttempts.reduce((s, a) => s + (a.totalQuestions || 0), 0);
-    const subScore = subAttempts.reduce((s, a) => s + (a.score || 0), 0);
-    const accuracy = subSolved > 0 ? Math.round((subScore / subSolved) * 100) : 0;
-    return { name: sub, accuracy, target: 85 };
-  });
+  const chartData = ALL_SUBJECTS.map(sub => ({
+    name: sub,
+    accuracy: subjectStats[sub].accuracy,
+    solved: subjectStats[sub].solved,
+    correct: subjectStats[sub].correct,
+    target: subjectStats[sub].target
+  }));
 
   return (
     <div className="space-y-6">
@@ -87,48 +93,76 @@ export const InsightsWorkspace: React.FC<InsightsWorkspaceProps> = ({
               <BarChart3 className="w-4 h-4" />
               <span>NMDCAT Performance & Accuracy Analytics</span>
             </div>
-            <h2 className="text-xl font-bold text-slate-100">Subject-wise Mastery & Predictive Score</h2>
-            <p className="text-xs text-slate-300">Track your progress across Biology, Chemistry, Physics, English, and Logical Reasoning.</p>
+            <h2 className="text-xl font-bold text-slate-100">Subject-wise Mastery & Score Estimation</h2>
+            <p className="text-xs text-slate-300">Deterministic metrics computed directly from authentic student attempts across all 5 PMDC subjects.</p>
           </UiCard>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2">
-              <p className="text-xs text-slate-400 uppercase font-semibold">Predicted NMDCAT Score</p>
+            {/* 1. Estimated NMDCAT Score */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2 relative group">
+              <div className="flex items-center justify-center gap-1.5">
+                <p className="text-xs text-slate-400 uppercase font-semibold">Estimated Score (Scaled)</p>
+                <span className="text-[10px] text-cyan-400/80 bg-cyan-950/50 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                  {estimatedScoreResult.confidenceLevel.toUpperCase()}
+                </span>
+              </div>
               <h3 className="text-3xl font-black text-cyan-300">
-                {hasUserActivity ? predictedScore : '0'} <span className="text-sm font-normal text-slate-400">/ 180</span>
+                {estimatedScoreResult.hasSufficientData ? estimatedScoreResult.estimatedScore : '—'}{' '}
+                <span className="text-sm font-normal text-slate-400">/ {estimatedScoreResult.totalMarks}</span>
               </h3>
-              <p className="text-[11px] text-slate-500">
-                {hasUserActivity ? `Based on ${examHistory.length} test attempts` : 'No test attempts recorded'}
+              <p className="text-[11px] text-slate-400 leading-tight">
+                {estimatedScoreResult.explanation}
               </p>
             </div>
+
+            {/* 2. Overall MCQ Accuracy */}
             <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2">
               <p className="text-xs text-slate-400 uppercase font-semibold">Overall MCQ Accuracy</p>
               <h3 className="text-3xl font-black text-teal-400">
-                {hasUserActivity ? `${overallAccuracy}%` : '0%'}
+                {accuracyResult.hasData ? accuracyResult.formattedAccuracy : '0%'}
               </h3>
-              <p className="text-[11px] text-slate-500">
-                {hasUserActivity ? `${totalCorrect} / ${totalQuestionsSolved} Correct` : 'No Data Yet'}
+              <p className="text-[11px] text-slate-400">
+                {accuracyResult.hasData ? `${accuracyResult.totalCorrect} / ${accuracyResult.totalSolved} Correct` : 'No Attempts Yet'}
               </p>
             </div>
+
+            {/* 3. Truthful Syllabus Revised */}
             <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-2">
               <p className="text-xs text-slate-400 uppercase font-semibold">Syllabus Revised</p>
               <h3 className="text-3xl font-black text-amber-400">
-                {hasUserActivity ? `${Math.min(100, Math.round((examHistory.length / 10) * 100))}%` : '0%'}
+                {syllabusResult.totalTopics > 0 ? `${syllabusResult.revisedPercentage}%` : '0%'}
               </h3>
-              <p className="text-[11px] text-slate-500">
-                {hasUserActivity ? `${examHistory.length} Sessions Completed` : 'No Units Completed Yet'}
+              <p className="text-[11px] text-slate-400">
+                {syllabusResult.totalTopics > 0
+                  ? `${syllabusResult.revisedCount} of ${syllabusResult.totalTopics} PMDC Topics Revised (${syllabusResult.totalSessionsCount} Test Sessions)`
+                  : 'Syllabus Checklist Loading...'}
               </p>
             </div>
           </div>
 
           <UiCard className="p-6 rounded-2xl bg-slate-900/95 border border-slate-800 space-y-4">
-            <h3 className="text-sm font-bold text-slate-100">Subject Accuracy Breakdown (%)</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-100">Subject Accuracy Breakdown (%)</h3>
+                <p className="text-xs text-slate-400">Aggregated performance across individual drills and full multi-subject mock exams</p>
+              </div>
+              <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                Target: 85%+
+              </span>
+            </div>
+
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <XAxis dataKey="name" stroke="#64748b" fontSize={12} />
                   <YAxis stroke="#64748b" fontSize={12} domain={[0, 100]} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#f8fafc' }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#f8fafc' }}
+                    formatter={(value: any, name: any, item: any) => [
+                      `${value}% (${item.payload.correct}/${item.payload.solved} Correct)`,
+                      'Subject Accuracy'
+                    ]}
+                  />
                   <Bar dataKey="accuracy" fill="#10b981" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -151,3 +185,4 @@ export const InsightsWorkspace: React.FC<InsightsWorkspaceProps> = ({
     </div>
   );
 };
+
