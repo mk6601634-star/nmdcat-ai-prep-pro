@@ -23,6 +23,7 @@ import {
   LogIn
 } from 'lucide-react';
 import type { User } from '../lib/firebase';
+import { FormattedMathContent } from './FormattedMathContent';
 
 interface FlashcardsViewProps {
   firebaseUser?: User | null;
@@ -464,17 +465,15 @@ export const FlashcardsView: React.FC<FlashcardsViewProps> = ({ firebaseUser, on
             {/* Card Content */}
             <div className="my-auto py-6 space-y-4">
               {!isFlipped ? (
-                <h3 className="text-lg sm:text-xl font-bold text-white leading-relaxed">
-                  {currentCard.front}
-                </h3>
+                <div className="text-lg sm:text-xl font-bold text-white leading-relaxed">
+                  <FormattedMathContent content={currentCard.front} />
+                </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-base text-emerald-300 font-semibold leading-relaxed">
-                    {currentCard.back}
-                  </p>
+                  <FormattedMathContent content={currentCard.back} className="text-base text-emerald-300 font-semibold leading-relaxed" />
                   {currentCard.keyFormulaOrConcept && (
-                    <div className="p-3 bg-slate-800/80 rounded-xl text-xs text-slate-300 font-mono border border-slate-700/60">
-                      {currentCard.keyFormulaOrConcept}
+                    <div className="p-3 bg-slate-800/80 rounded-xl text-xs text-slate-300 border border-slate-700/60">
+                      <FormattedMathContent content={currentCard.keyFormulaOrConcept} />
                     </div>
                   )}
                   {currentCard.mnemonic && (

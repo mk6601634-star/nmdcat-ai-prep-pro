@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { MCQQuestion, SubjectType } from '../types';
 import { matchQuestionsFromBank } from '../utils/topicMatcher';
+import { FormattedMathContent } from './FormattedMathContent';
 
 interface SequentialPracticeModeProps {
   questionBank: MCQQuestion[];
@@ -629,9 +630,7 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
                     What is the primary rate-limiting step and key formula governing {activeObjective.subtopic}?
                   </p>
                 ) : (
-                  <p className="font-semibold text-emerald-300 text-sm leading-relaxed">
-                    {activeObjective.keyFormula}
-                  </p>
+                  <FormattedMathContent content={activeObjective.keyFormula} className="font-semibold text-emerald-300 text-sm leading-relaxed" />
                 )}
               </div>
 
@@ -656,7 +655,7 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
 
                 <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Verified Formula / Law</span>
-                  <p className="font-mono text-emerald-400 text-sm font-bold">{activeObjective.keyFormula}</p>
+                  <FormattedMathContent content={activeObjective.keyFormula} className="text-emerald-400 text-sm font-bold text-center" />
                 </div>
               </div>
 
@@ -680,9 +679,7 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
 
               {sessionQuestions[activeMcqIndex] && (
                 <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 text-xs">
-                  <p className="font-bold text-white text-sm leading-relaxed">
-                    {sessionQuestions[activeMcqIndex].question}
-                  </p>
+                  <FormattedMathContent content={sessionQuestions[activeMcqIndex].question} className="font-bold text-white text-sm leading-relaxed" />
 
                   <div className="space-y-2">
                     {sessionQuestions[activeMcqIndex].options.map((opt, idx) => {
@@ -702,10 +699,12 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
                           disabled={userSelectedOption !== null}
                           className={`w-full p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${btnStyle}`}
                         >
-                          <span className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center font-bold text-[10px]">
+                          <span className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center font-bold text-[10px] shrink-0">
                             {String.fromCharCode(65 + idx)}
                           </span>
-                          <span className="flex-1">{opt}</span>
+                          <div className="flex-1 min-w-0">
+                            <FormattedMathContent content={opt} className="inline-block" />
+                          </div>
                         </button>
                       );
                     })}
@@ -713,9 +712,10 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
 
                   {userSelectedOption !== null && (
                     <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2 pt-3">
-                      <p className="text-slate-300 text-[11px]">
-                        <strong>Explanation:</strong> {sessionQuestions[activeMcqIndex].explanation}
-                      </p>
+                      <div className="text-slate-300 text-[11px] flex items-start gap-1">
+                        <strong className="text-emerald-400 shrink-0">Explanation:</strong>
+                        <FormattedMathContent content={sessionQuestions[activeMcqIndex].explanation} className="inline" />
+                      </div>
 
                       <button
                         onClick={handleNextMcq}

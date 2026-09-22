@@ -1120,9 +1120,14 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
                   {generatedContent.formulas.map((f: any, idx: number) => (
                     <div key={idx} className="bg-slate-950 p-4 rounded-xl border border-indigo-500/30 space-y-2">
                       <div className="font-bold text-white text-sm">{f.title}</div>
-                      <code className="text-sm font-mono font-bold text-indigo-300 block bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">{f.formula}</code>
-                      <p className="text-xs text-slate-300">{f.unitsAndDimensions}</p>
-                      <p className="text-xs text-rose-300 font-medium">⚠️ Trap: {f.commonMistakes}</p>
+                      <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 text-center">
+                        <FormattedMathContent content={f.formula} className="text-sm font-bold text-indigo-300" />
+                      </div>
+                      <FormattedMathContent content={f.unitsAndDimensions} className="text-xs text-slate-300" />
+                      <div className="text-xs text-rose-300 font-medium flex items-start gap-1.5">
+                        <span className="font-bold shrink-0">⚠️ Trap:</span>
+                        <FormattedMathContent content={f.commonMistakes} className="inline" />
+                      </div>
                     </div>
                   ))}
                   <button
@@ -1141,9 +1146,17 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
                   {generatedContent.reactions.map((r: any, idx: number) => (
                     <div key={idx} className="bg-slate-950 p-4 rounded-xl border border-teal-500/30 space-y-2">
                       <div className="font-bold text-white text-sm">{r.reactionName}</div>
-                      <code className="text-sm font-mono font-bold text-emerald-300 block bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">{r.chemicalEquation}</code>
-                      <p className="text-xs text-slate-300"><strong>Mechanism:</strong> {r.mechanism}</p>
-                      <p className="text-xs text-amber-300"><strong>Exceptions:</strong> {r.importantExceptions}</p>
+                      <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 text-center">
+                        <FormattedMathContent content={r.chemicalEquation} className="text-sm font-bold text-emerald-300" />
+                      </div>
+                      <div className="text-xs text-slate-300">
+                        <strong className="text-teal-400">Mechanism: </strong>
+                        <FormattedMathContent content={r.mechanism} className="inline" />
+                      </div>
+                      <div className="text-xs text-amber-300">
+                        <strong className="text-amber-400">Exceptions: </strong>
+                        <FormattedMathContent content={r.importantExceptions} className="inline" />
+                      </div>
                     </div>
                   ))}
                   <button

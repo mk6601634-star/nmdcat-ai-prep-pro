@@ -1906,8 +1906,8 @@ Difficulty Mode: ${difficultyMode}
 
 CRITICAL REQUIREMENTS:
 1. Formulas must adhere strictly to PMDC/UHS/NUMS/FSc textbook syllabus.
-2. Provide exact formula syntax, variable breakdowns with physical meanings.
-3. Include standard SI units and dimensional formula.
+2. Provide standard LaTeX mathematical notation for all equations (use \\frac{a}{b}, ^{2}, _{i}, \\sqrt{x}, \\sin(\\theta), \\Delta, \\times, etc.). Never use raw programming ASCII syntax like v^2*sin(2θ)/g.
+3. Include standard SI units and dimensional formula in LaTeX or clean text.
 4. Include concrete exam applications and shortcuts.
 5. Highlight the single most frequent student trap or common exam calculation mistake.
 6. Return ONLY valid JSON.
@@ -1917,7 +1917,7 @@ Return ONLY a valid JSON object with this exact structure:
   "formulas": [
     {
       "title": "Specific formula title",
-      "formula": "Primary formula equation (e.g. F = G*(m1*m2)/r^2)",
+      "formula": "Primary formula in LaTeX (e.g. $R = \\frac{v^2 \\sin(2\\theta)}{g}$ or $F = G \\frac{m_1 m_2}{r^2}$)",
       "variables": ["v1 = explanation with unit", "v2 = explanation with unit"],
       "unitsAndDimensions": "SI Units: ... | Dimensions: [...]",
       "applications": "Direct exam calculation use-case and proportional relationships",
@@ -1967,7 +1967,7 @@ Topic: ${topic}
 Difficulty Mode: ${difficultyMode}
 
 CRITICAL REQUIREMENTS:
-1. Provide accurate, balanced chemical equation with standard reagents and states.
+1. Provide accurate, balanced chemical equation with standard reagents, states, and subscripts (e.g. $2\\text{CH}_3\\text{CHO} \\xrightarrow{\\text{dil. NaOH}} \\text{CH}_3\\text{CH(OH)CH}_2\\text{CHO}$).
 2. Specify exact reaction mechanism (e.g., SN1, SN2, E1, E2, Electrophilic Addition, Nucleophilic Addition, Free Radical).
 3. Specify exact catalysts and reaction conditions (temperature, pressure, solvent).
 4. Specify key exceptions, side reactions, or PMDC past-paper exam traps.
@@ -1978,7 +1978,7 @@ Return ONLY a valid JSON object with this exact structure:
   "reactions": [
     {
       "reactionName": "Reaction title (e.g. Aldol Condensation)",
-      "chemicalEquation": "Complete chemical equation (e.g. 2 CH3CHO --(dil. NaOH)--> CH3-CH(OH)-CH2-CHO)",
+      "chemicalEquation": "Balanced chemical equation in standard notation (e.g. $2\\text{CH}_3\\text{CHO} \\xrightarrow{\\text{dil. NaOH}} \\text{CH}_3\\text{CH(OH)CH}_2\\text{CHO}$ or 2 CH3CHO -> CH3-CH(OH)-CH2-CHO)",
       "mechanism": "Step-by-step mechanism type and key intermediate",
       "catalysts": "Catalyst name and role",
       "conditions": "Temperature, solvent, and environment conditions",

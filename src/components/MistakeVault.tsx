@@ -11,6 +11,7 @@ import {
   Filter,
   Sparkles
 } from 'lucide-react';
+import { FormattedMathContent } from './FormattedMathContent';
 
 interface MistakeVaultProps {
   savedMistakes: SavedMistake[];
@@ -108,9 +109,9 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
               {currentRetestItem.question.subject}
             </span>
-            <h3 className="text-base font-bold text-white leading-relaxed">
-              {currentRetestItem.question.question}
-            </h3>
+            <div className="text-base font-bold text-white leading-relaxed">
+              <FormattedMathContent content={currentRetestItem.question.question} />
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -140,9 +141,14 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
                   disabled={isRetestAnswered}
                   className={`w-full flex items-center justify-between p-4 rounded-xl border text-xs sm:text-sm text-left transition-all ${btnStyle}`}
                 >
-                  <span>{String.fromCharCode(65 + optIdx)}. {opt}</span>
-                  {isRetestAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-                  {isRetestAnswered && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400" />}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="shrink-0">{String.fromCharCode(65 + optIdx)}.</span>
+                    <div className="flex-1 min-w-0">
+                      <FormattedMathContent content={opt} className="inline-block" />
+                    </div>
+                  </div>
+                  {isRetestAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 ml-2" />}
+                  {isRetestAnswered && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0 ml-2" />}
                 </button>
               );
             })}
@@ -151,7 +157,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
           {isRetestAnswered && (
             <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50 space-y-2 text-xs">
               <div className="font-bold text-emerald-400">Explanation:</div>
-              <p className="text-slate-300 leading-relaxed">{currentRetestItem.question.explanation}</p>
+              <FormattedMathContent content={currentRetestItem.question.explanation} className="text-slate-300 leading-relaxed" />
             </div>
           )}
 
@@ -228,7 +234,9 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
                         </span>
                         <span className="text-[10px] text-slate-500">Added: {item.dateAdded}</span>
                       </div>
-                      <h3 className="font-semibold text-slate-100 text-sm">{item.question.question}</h3>
+                      <div className="font-semibold text-slate-100 text-sm">
+                        <FormattedMathContent content={item.question.question} />
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
@@ -261,8 +269,11 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
                       if (oIdx === item.wrongAnswerIndex) optStyle = 'bg-rose-500/20 text-rose-200 border-rose-500/50 font-semibold';
 
                       return (
-                        <div key={oIdx} className={`p-2.5 rounded-lg border ${optStyle}`}>
-                          {String.fromCharCode(65 + oIdx)}. {opt}
+                        <div key={oIdx} className={`p-2.5 rounded-lg border flex items-center gap-2 ${optStyle}`}>
+                          <span className="shrink-0">{String.fromCharCode(65 + oIdx)}.</span>
+                          <div className="flex-1 min-w-0">
+                            <FormattedMathContent content={opt} className="inline-block" />
+                          </div>
                         </div>
                       );
                     })}
@@ -290,7 +301,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
                         </select>
                       </div>
                     </div>
-                    <p className="leading-relaxed">{item.question.explanation}</p>
+                    <FormattedMathContent content={item.question.explanation} className="leading-relaxed" />
                   </div>
 
                   {/* Personal Study Notes */}

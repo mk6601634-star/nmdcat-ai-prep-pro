@@ -35,6 +35,7 @@ import {
 } from '../lib/firestoreService';
 import { aiFetch, getAiFriendlyMessage } from '../lib/aiRequest';
 import type { User } from '../lib/firebase';
+import { FormattedMathContent } from './FormattedMathContent';
 
 interface GeneratedQuestion {
   question: string;
@@ -1029,9 +1030,9 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                     <span>{savedQuestionIndices[idx] ? 'Saved' : 'Save MCQ'}</span>
                   </button>
                 </div>
-                <h2 className="text-base sm:text-lg font-bold text-white leading-relaxed">
-                  {q.question}
-                </h2>
+                <div className="text-base sm:text-lg font-bold text-white leading-relaxed">
+                  <FormattedMathContent content={q.question} />
+                </div>
               </div>
 
               {/* Options List */}
@@ -1063,17 +1064,19 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                       disabled={showResults}
                       className={`w-full flex items-center justify-between p-4 rounded-xl border text-xs sm:text-sm text-left transition-all ${optionStyle}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
                           isSelected ? 'bg-slate-100 text-slate-900' : 'bg-slate-700 text-slate-300'
                         }`}>
                           {optionLetter}
                         </span>
-                        <span>{option}</span>
+                        <div className="flex-1 min-w-0">
+                          <FormattedMathContent content={option} className="inline-block" />
+                        </div>
                       </div>
 
-                      {showCorrectness && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
-                      {showCorrectness && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0" />}
+                      {showCorrectness && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 ml-2" />}
+                      {showCorrectness && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0 ml-2" />}
                     </button>
                   );
                 })}
@@ -1084,7 +1087,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
                 <div className="space-y-4 pt-4 border-t border-slate-800">
                   <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/60 space-y-2">
                     <div className="font-bold text-emerald-400">Explanation:</div>
-                    <p className="text-slate-300 text-sm leading-relaxed">{q.explanation}</p>
+                    <FormattedMathContent content={q.explanation} className="text-slate-300 text-sm leading-relaxed" />
                   </div>
 
                   {/* Wrong Answer Analysis & Auto-Save Badge */}

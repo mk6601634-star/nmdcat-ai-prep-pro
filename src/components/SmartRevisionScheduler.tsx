@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SubjectType, Flashcard, SyllabusTopic, SavedMistake } from '../types';
+import { FormattedMathContent } from './FormattedMathContent';
 import { subscribeToPublishedFlashcards } from '../lib/firestoreService';
 import { aiFetch, getAiFriendlyMessage, isAiRequestCancelled } from '../lib/aiRequest';
 import { useAiRequestAction } from '../lib/useAiRequestAction';
@@ -463,16 +464,16 @@ export const SmartRevisionScheduler: React.FC<SmartRevisionSchedulerProps> = ({
                   {currentCard.cardType === 'standard' && (
                     !isFlipped ? (
                       <h3 className="text-lg sm:text-xl font-bold text-white leading-relaxed">
-                        {currentCard.front}
+                        <FormattedMathContent content={currentCard.front} />
                       </h3>
                     ) : (
                       <div className="space-y-3">
-                        <p className="text-base text-emerald-300 font-semibold leading-relaxed">
-                          {currentCard.back}
-                        </p>
+                        <div className="text-base text-emerald-300 font-semibold leading-relaxed">
+                          <FormattedMathContent content={currentCard.back} />
+                        </div>
                         {currentCard.mnemonic && (
                           <div className="text-xs text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
-                            💡 Mnemonic: {currentCard.mnemonic}
+                            💡 Mnemonic: <FormattedMathContent content={currentCard.mnemonic} className="inline" />
                           </div>
                         )}
                       </div>
@@ -482,15 +483,15 @@ export const SmartRevisionScheduler: React.FC<SmartRevisionSchedulerProps> = ({
                   {/* Cloze Deletion Card */}
                   {currentCard.cardType === 'cloze' && (
                     <div className="space-y-4">
-                      <p className="text-base text-white font-medium">
+                      <div className="text-base text-white font-medium">
                         {currentCard.clozeSentence ? (
                           isFlipped ? (
                             <span dangerouslySetInnerHTML={{ __html: currentCard.clozeSentence.replace(/\[(.*?)\]/g, '<strong class="text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">$1</strong>') }} />
                           ) : (
                             <span dangerouslySetInnerHTML={{ __html: currentCard.clozeSentence.replace(/\[(.*?)\]/g, '<span class="bg-indigo-950 text-indigo-300 border border-indigo-500 px-3 py-1 rounded font-mono">______</span>') }} />
                           )
-                        ) : currentCard.front}
-                      </p>
+                        ) : <FormattedMathContent content={currentCard.front} />}
+                      </div>
 
                       {!isFlipped && (
                         <div className="max-w-sm mx-auto flex gap-2">
@@ -519,13 +520,15 @@ export const SmartRevisionScheduler: React.FC<SmartRevisionSchedulerProps> = ({
                         <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/30">
                           Definition Recall &bull; What term is described?
                         </span>
-                        <p className="text-base text-slate-200 leading-relaxed font-serif italic">
-                          "{currentCard.back}"
-                        </p>
+                        <div className="text-base text-slate-200 leading-relaxed font-serif italic">
+                          "<FormattedMathContent content={currentCard.back} className="inline" />"
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <h3 className="text-xl font-extrabold text-amber-400">{currentCard.front}</h3>
+                        <h3 className="text-xl font-extrabold text-amber-400">
+                          <FormattedMathContent content={currentCard.front} />
+                        </h3>
                         <p className="text-xs text-slate-300">{currentCard.topic}</p>
                       </div>
                     )
@@ -541,9 +544,13 @@ export const SmartRevisionScheduler: React.FC<SmartRevisionSchedulerProps> = ({
                           className="w-full h-44 object-cover rounded-xl border border-slate-700 shadow-md"
                         />
                       )}
-                      <p className="text-sm font-bold text-white">{currentCard.front}</p>
+                      <div className="text-sm font-bold text-white">
+                        <FormattedMathContent content={currentCard.front} />
+                      </div>
                       {isFlipped && (
-                        <p className="text-xs text-emerald-300 font-semibold">{currentCard.back}</p>
+                        <div className="text-xs text-emerald-300 font-semibold">
+                          <FormattedMathContent content={currentCard.back} />
+                        </div>
                       )}
                     </div>
                   )}
@@ -630,7 +637,9 @@ export const SmartRevisionScheduler: React.FC<SmartRevisionSchedulerProps> = ({
                     {item.subject}
                   </span>
                 </div>
-                <p className="text-xs text-slate-200 leading-relaxed font-mono">{item.detail}</p>
+                <div className="text-xs text-slate-200 leading-relaxed font-mono">
+                  <FormattedMathContent content={item.detail} />
+                </div>
               </div>
             ))}
           </div>

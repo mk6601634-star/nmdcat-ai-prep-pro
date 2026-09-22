@@ -5,6 +5,7 @@ import { useAiRequestAction } from '../lib/useAiRequestAction';
 import { fetchPublishedMcqsForTopic } from '../lib/firestoreService';
 import { matchQuestionsFromBank } from '../utils/topicMatcher';
 import { AiActionStatus } from './AiActionStatus';
+import { FormattedMathContent } from './FormattedMathContent';
 import { 
   BookOpen, 
   Sparkles, 
@@ -397,9 +398,7 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
           <div className="bg-slate-900/90 p-6 sm:p-8 rounded-2xl border border-slate-800 shadow-xl space-y-6">
             <div className="space-y-2">
               <span className="text-xs font-semibold text-slate-400">Chapter: {currentQ.chapter}</span>
-              <h2 className="text-base sm:text-lg font-bold text-white leading-relaxed">
-                {currentQ.question}
-              </h2>
+              <FormattedMathContent content={currentQ.question} className="text-base sm:text-lg font-bold text-white leading-relaxed" />
             </div>
 
             {/* Options List */}
@@ -418,6 +417,8 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
                   } else {
                     optionStyle = 'bg-slate-800/40 border-slate-800 text-slate-500';
                   }
+                } else if (isSelected) {
+                  optionStyle = 'bg-indigo-500/20 border-indigo-500/60 text-indigo-200 font-semibold';
                 }
 
                 return (
@@ -427,17 +428,19 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
                     disabled={isAnswered}
                     className={`w-full flex items-center justify-between p-4 rounded-xl border text-xs sm:text-sm text-left transition-all ${optionStyle}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
                         isSelected ? 'bg-slate-100 text-slate-900' : 'bg-slate-700 text-slate-300'
                       }`}>
                         {String.fromCharCode(65 + optIdx)}
                       </span>
-                      <span>{opt}</span>
+                      <div className="flex-1 min-w-0">
+                        <FormattedMathContent content={opt} className="inline-block" />
+                      </div>
                     </div>
 
-                    {isAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
-                    {isAnswered && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0" />}
+                    {isAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 ml-2" />}
+                    {isAnswered && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0 ml-2" />}
                   </button>
                 );
               })}
@@ -455,7 +458,7 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">{currentQ.explanation}</p>
+                  <FormattedMathContent content={currentQ.explanation} className="text-xs text-slate-300 leading-relaxed" />
                 </div>
 
                 {/* AI Detailed Breakdown Button */}
@@ -474,7 +477,7 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
                       <Sparkles className="w-4 h-4 text-indigo-400" />
                       <span>AI Tutor Breakdown:</span>
                     </div>
-                    <div className="whitespace-pre-wrap mt-1">{aiExplanation}</div>
+                    <FormattedMathContent content={aiExplanation} className="mt-1" />
                   </div>
                 )}
 

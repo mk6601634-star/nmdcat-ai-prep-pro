@@ -20,6 +20,7 @@ import {
   Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { FormattedMathContent } from './FormattedMathContent';
 
 interface MockExamProps {
   questionBank: MCQQuestion[];
@@ -383,9 +384,9 @@ export const MockExam: React.FC<MockExamProps> = ({
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <span className="text-xs font-medium text-slate-400">Unit / Chapter: {currentQ.chapter}</span>
-                  <h2 className="text-base sm:text-lg font-bold text-white leading-relaxed">
-                    {currentQ.question}
-                  </h2>
+                  <div className="text-base sm:text-lg font-bold text-white leading-relaxed">
+                    <FormattedMathContent content={currentQ.question} />
+                  </div>
                 </div>
 
                 <button
@@ -415,13 +416,15 @@ export const MockExam: React.FC<MockExamProps> = ({
                           : 'bg-slate-800/80 border-slate-700/80 text-slate-300 hover:border-slate-600'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
                           isSelected ? 'bg-emerald-400 text-slate-950' : 'bg-slate-700 text-slate-300'
                         }`}>
                           {String.fromCharCode(65 + optIdx)}
                         </span>
-                        <span>{opt}</span>
+                        <div className="flex-1 min-w-0">
+                          <FormattedMathContent content={opt} className="inline-block" />
+                        </div>
                       </div>
                     </button>
                   );
@@ -647,7 +650,9 @@ export const MockExam: React.FC<MockExamProps> = ({
                       {isUnattempted && <span className="text-xs font-bold text-amber-400">Unattempted</span>}
                     </div>
 
-                    <h4 className="font-semibold text-slate-100 text-sm">{q.question}</h4>
+                    <div className="font-semibold text-slate-100 text-sm">
+                      <FormattedMathContent content={q.question} />
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       {q.options.map((opt, oIdx) => {
@@ -656,8 +661,11 @@ export const MockExam: React.FC<MockExamProps> = ({
                         if (userChoice === oIdx && !isCorrect) optStyle = 'bg-rose-500/20 text-rose-200 border-rose-500/50 font-semibold';
 
                         return (
-                          <div key={oIdx} className={`p-2.5 rounded-lg border ${optStyle}`}>
-                            {String.fromCharCode(65 + oIdx)}. {opt}
+                          <div key={oIdx} className={`p-2.5 rounded-lg border flex items-center gap-2 ${optStyle}`}>
+                            <span className="shrink-0">{String.fromCharCode(65 + oIdx)}.</span>
+                            <div className="flex-1 min-w-0">
+                              <FormattedMathContent content={opt} className="inline-block" />
+                            </div>
                           </div>
                         );
                       })}
@@ -665,7 +673,7 @@ export const MockExam: React.FC<MockExamProps> = ({
 
                     <div className="bg-slate-800/60 p-3 rounded-lg border border-slate-700/50 text-xs text-slate-300 space-y-1">
                       <div className="font-bold text-emerald-400">Explanation:</div>
-                      <div>{q.explanation}</div>
+                      <FormattedMathContent content={q.explanation} />
                     </div>
 
                     {!isCorrect && !isUnattempted && (

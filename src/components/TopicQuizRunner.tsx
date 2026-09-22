@@ -4,6 +4,7 @@ import { MCQQuestion, ExamAttempt } from '../types';
 import confetti from 'canvas-confetti';
 import { saveExamAttemptToFirestore, saveMistakeToFirestore } from '../lib/firestoreService';
 import { auth } from '../lib/firebase';
+import { FormattedMathContent } from './FormattedMathContent';
 
 interface TopicQuizRunnerProps {
   questions: MCQQuestion[];
@@ -123,13 +124,18 @@ export const TopicQuizRunner: React.FC<TopicQuizRunnerProps> = ({ questions, sou
             <div className="mt-3 space-y-3">
               {questions.map((q, i) => (
                 <UiCard key={i} className="p-3">
-                  <div className="flex items-start justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 space-y-1">
                       <div className="text-xs text-slate-400">Q{i+1}</div>
-                      <div className="font-semibold text-slate-100">{q.question}</div>
-                      <div className="text-sm text-slate-300 mt-1">{q.explanation}</div>
+                      <FormattedMathContent content={q.question} className="font-semibold text-slate-100" />
+                      {q.explanation && (
+                        <div className="text-sm text-slate-300 mt-1 bg-slate-900/60 p-2 rounded border border-slate-800">
+                          <strong className="text-emerald-400">Explanation: </strong>
+                          <FormattedMathContent content={q.explanation} className="inline" />
+                        </div>
+                      )}
                     </div>
-                    <div className="text-sm text-right">
+                    <div className="text-sm text-right shrink-0">
                       <div className={`px-2 py-1 rounded ${userAnswers[i] === q.correctIndex ? 'bg-emerald-500 text-slate-900' : 'bg-rose-500 text-white'}`}>{userAnswers[i] === q.correctIndex ? 'Correct' : 'Incorrect'}</div>
                     </div>
                   </div>
@@ -156,10 +162,19 @@ export const TopicQuizRunner: React.FC<TopicQuizRunnerProps> = ({ questions, sou
         </div>
 
         <div className="mt-4">
-          <div className="font-semibold text-white">{currentQ.question}</div>
+          <FormattedMathContent content={currentQ.question} className="font-semibold text-white text-base leading-relaxed" />
           <div className="mt-3 grid gap-2">
             {currentQ.options.map((opt, idx) => (
-              <button key={idx} onClick={() => handleSelect(idx)} className={`w-full text-left p-3 rounded ${userAnswers[currentIdx] === idx ? 'bg-cyan-500 text-slate-900' : 'bg-slate-800 text-slate-200'}`}>{String.fromCharCode(65+idx)}. {opt}</button>
+              <button 
+                key={idx} 
+                onClick={() => handleSelect(idx)} 
+                className={`w-full text-left p-3 rounded flex items-center gap-2 ${userAnswers[currentIdx] === idx ? 'bg-cyan-500 text-slate-900 font-bold' : 'bg-slate-800 text-slate-200'}`}
+              >
+                <span className="shrink-0">{String.fromCharCode(65+idx)}.</span>
+                <div className="flex-1 min-w-0">
+                  <FormattedMathContent content={opt} className="inline-block" />
+                </div>
+              </button>
             ))}
           </div>
         </div>

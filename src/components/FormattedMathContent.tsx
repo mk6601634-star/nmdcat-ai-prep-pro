@@ -12,7 +12,7 @@ const KATEX_CACHE = new Map<string, string>();
 const MAX_KATEX_CACHE_SIZE = 2000;
 
 const CONTENT_RENDER_CACHE = new Map<string, string>();
-const MAX_CONTENT_CACHE_SIZE = 600;
+const MAX_CONTENT_CACHE_SIZE = 800;
 
 /**
  * Safely render KaTeX math with high-performance LRU memoization
@@ -57,30 +57,181 @@ function escapeHtml(str: string): string {
 }
 
 /**
+ * Normalizes Greek Unicode characters and standard math operators to standard LaTeX commands
+ */
+function normalizeGreekAndOperators(str: string): string {
+  return str
+    .replace(/\bpi\b/g, '\\pi ')
+    .replace(/\btheta\b/g, '\\theta ')
+    .replace(/\balpha\b/g, '\\alpha ')
+    .replace(/\bbeta\b/g, '\\beta ')
+    .replace(/\bgamma\b/g, '\\gamma ')
+    .replace(/\blambda\b/g, '\\lambda ')
+    .replace(/\bmu\b/g, '\\mu ')
+    .replace(/\bDelta\b/g, '\\Delta ')
+    .replace(/θ/g, '\\theta ')
+    .replace(/α/g, '\\alpha ')
+    .replace(/β/g, '\\beta ')
+    .replace(/γ/g, '\\gamma ')
+    .replace(/δ/g, '\\delta ')
+    .replace(/λ/g, '\\lambda ')
+    .replace(/μ/g, '\\mu ')
+    .replace(/π/g, '\\pi ')
+    .replace(/σ/g, '\\sigma ')
+    .replace(/ω/g, '\\omega ')
+    .replace(/Δ/g, '\\Delta ')
+    .replace(/Ω/g, '\\Omega ')
+    .replace(/±/g, '\\pm ')
+    .replace(/≠/g, '\\ne ')
+    .replace(/≤/g, '\\le ')
+    .replace(/≥/g, '\\ge ')
+    .replace(/≈/g, '\\approx ')
+    .replace(/∞/g, '\\infty ')
+    .replace(/°C/g, '^\\circ\\text{C}')
+    .replace(/°/g, '^\\circ')
+    .replace(/×/g, '\\times ')
+    .replace(/·/g, '\\cdot ');
+}
+
+function matchParen(str: string, openIdx: number): number {
+  let depth = 0;
+  for (let i = openIdx; i < str.length; i++) {
+    if (str[i] === '(') depth++;
+    else if (str[i] === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function normalizeFractions(text: string): string {
+  let changed = true;
+  let s = text;
+  let iterations = 0;
+
+  while (changed && iterations < 10) {
+    changed = false;
+    iterations++;
+
+    let slashIdx = s.indexOf('/');
+    while (slashIdx !== -1) {
+      let before = s.slice(0, slashIdx).trimEnd();
+      let after = s.slice(slashIdx + 1).trimStart();
+      
+      let num = '';
+      let numStart = -1;
+      let den = '';
+      let denEnd = -1;
+
+      if (before.endsWith(')')) {
+        let depth = 0;
+        let p = before.length - 1;
+        while (p >= 0) {
+          if (before[p] === ')') depth++;
+          else if (before[p] === '(') {
+            depth--;
+            if (depth === 0) {
+              numStart = p;
+              num = before.slice(p + 1, before.length - 1);
+              break;
+            }
+          }
+          p--;
+        }
+      } else {
+        const m = before.match(/([A-Za-z0-9_^{}\\\s\*\+\-\.]+)$/);
+        if (m) {
+          num = m[1].trim();
+          numStart = before.length - num.length;
+        }
+      }
+
+      if (after.startsWith('(')) {
+        const closeIdx = matchParen(after, 0);
+        if (closeIdx !== -1) {
+          den = after.slice(1, closeIdx);
+          denEnd = closeIdx + 1;
+        }
+      } else {
+        const m = after.match(/^([A-Za-z0-9_^{}\\\.\^]+)/);
+        if (m) {
+          den = m[1].trim();
+          denEnd = m[0].length;
+        }
+      }
+
+      if (num && den && numStart !== -1 && denEnd !== -1) {
+        const prefix = before.slice(0, numStart);
+        const suffix = after.slice(denEnd);
+        const frac = `\\frac{${num.trim()}}{${den.trim()}}`;
+        s = prefix + frac + suffix;
+        changed = true;
+        break;
+      }
+
+      slashIdx = s.indexOf('/', slashIdx + 1);
+    }
+  }
+
+  // Strip redundant parens around \frac: (\frac{a}{b}) -> \frac{a}{b}
+  s = s.replace(/\((\\frac\{[^{}]+\}\{[^{}]+\})\)/g, '$1');
+
+  return s;
+}
+
+/**
+ * Converts ASCII math equations (like R = (v^2*sin(2θ))/g or a = (vf - vi)/t)
+ * into standard LaTeX equations.
+ */
+function normalizeAsciiEquationToLatex(expr: string): string {
+  let s = normalizeGreekAndOperators(expr.trim());
+
+  // Square roots: sqrt(...) -> \sqrt{...}
+  s = s.replace(/sqrt\(([^()]+)\)/gi, (_, inner) => `\\sqrt{${normalizeFractions(inner)}}`);
+
+  // Trig functions: sin, cos, tan, cot, sec, csc
+  s = s.replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|exp)\s*\(([^()]+)\)/gi, '\\$1($2)');
+  s = s.replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|exp)\s+([A-Za-z0-9\\_]+)/gi, '\\$1 $2');
+
+  // Fractions with robust nested paren support
+  s = normalizeFractions(s);
+
+  // Powers: x^2 or x^(2) or x**2
+  s = s.replace(/\*\*(\d+|\([+-]?\d+\))/g, '^{$1}');
+  s = s.replace(/\^([a-zA-Z0-9]+)/g, '^{$1}');
+
+  // Multiplication: * in math -> \cdot
+  s = s.replace(/\s*\*\s*/g, ' \\cdot ');
+
+  // Subscripts: v_i, v_f, m_1, m_2, F_g, K_m, etc.
+  s = s.replace(/\b([a-zA-Z])_([a-zA-Z0-9]+)\b/g, '$1_{$2}');
+
+  // Clean redundant whitespace
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Normalizes plain-text scientific, physiological, chemical, and mathematical expressions
- * so that expressions without explicit $ delimiters (e.g. from PRISM, databases, textbooks)
+ * so that expressions without explicit $ delimiters (e.g. from PRISM, databases, textbooks, AI)
  * are cleanly upgraded to LaTeX before markdown and math extraction.
  */
-function normalizeScientificMathNotation(input: string): string {
+export function normalizeScientificMathNotation(input: string): string {
   if (!input) return '';
 
   let text = input;
 
   // 0. Standalone $ on separate lines -> $$ display math
-  // e.g.:
-  // $
-  // u_c(x) = \sqrt{u_A^2 + u_B^2}
-  // $
-  text = text.replace(/(?:^|\n)[ \t]*\$[ \t]*\n([\s\S]+?)\n[ \t]*\$[ \t]*(?=\n|$)/g, (match, formula) => {
+  text = text.replace(/(?:^|\n)[ \t]*\$[ \t]*\n([\s\S]+?)\n[ \t]*\$[ \t]*(?=\n|$)/g, (_, formula) => {
     return `\n$$\n${formula.trim()}\n$$\n`;
   });
 
   // Standalone \begin{...} -> $$ display math
-  text = text.replace(/(?:^|\n)[ \t]*(\\begin\{(?:equation|align|aligned|gather|matrix|pmatrix|bmatrix|cases)\*?\}[\s\S]*?\\end\{(?:equation|align|aligned|gather|matrix|pmatrix|bmatrix|cases)\*?\})[ \t]*(?=\n|$)/g, (match, formula) => {
+  text = text.replace(/(?:^|\n)[ \t]*(\\begin\{(?:equation|align|aligned|gather|matrix|pmatrix|bmatrix|cases)\*?\}[\s\S]*?\\end\{(?:equation|align|aligned|gather|matrix|pmatrix|bmatrix|cases)\*?\})[ \t]*(?=\n|$)/g, (_, formula) => {
     return `\n$$\n${formula.trim()}\n$$\n`;
   });
 
-  // 1. Protect existing LaTeX delimiters ($$, $, \[, \]) and code blocks (```)
+  // 1. Protect existing LaTeX delimiters ($$, $, \[, \], \(, \)) and code blocks (```)
   const preservedBlocks: string[] = [];
   text = text.replace(/```[\s\S]*?```|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|(?<!\\)\$[^\$\n]+?(?<!\\)\$|\\\([\s\S]*?\\\)/g, (match) => {
     const idx = preservedBlocks.length;
@@ -88,9 +239,31 @@ function normalizeScientificMathNotation(input: string): string {
     return `@@PRESERVED_MATH_OR_CODE_${idx}@@`;
   });
 
-  // 2. High-Yield Physiological Equations
-  // e.g. V̇A = (PACO2 - PH2O)/K or V.A = (Pao2 - Ph2o)/K or VA = (PaCO2 - PH2O)/k
-  text = text.replace(/\b(V̇A|V\.A|V̇O2|V̇CO2|Vmax|Km)\s*=\s*([^\n\.,;]+)/gi, (match, lhs, rhs) => {
+  // 2. High-Yield Mathematical & Physical Equations (e.g. R = (v^2*sin(2θ))/g or F = G*(m1*m2)/r^2)
+  // Matches expressions with = or \approx or \le or \ge or \propto containing math operators
+  text = text.replace(/(?:^|\n|\s)([a-zA-Z_][a-zA-Z0-9_]*(?:\([a-zA-Z0-9_, ]+\))?)\s*(=|\\approx|\\propto|\\le|\\ge)\s*([^\n,;]{3,})(?=\n|$|\.|\,)/g, (match, lhs, rel, rhs) => {
+    // Only convert if rhs has mathematical characters (^, /, *, +, -, \sqrt, sin, cos, tan, θ, etc.)
+    if (/[\^\/\*\+\-θαβγδλμπσωΔΩ\\_]|\b(sin|cos|tan|sqrt|log|ln|Vmax|Km)\b/i.test(rhs)) {
+      const cleanLhs = normalizeAsciiEquationToLatex(lhs);
+      const cleanRhs = normalizeAsciiEquationToLatex(rhs);
+      const prefix = match.startsWith('\n') ? '\n' : (match.startsWith(' ') ? ' ' : '');
+      return `${prefix}$${cleanLhs} ${rel} ${cleanRhs}$`;
+    }
+    return match;
+  });
+
+  // 3. Isolated ASCII Fractions with Parentheses (e.g. (v^2*sin(2θ))/g or (a+b)/(c+d))
+  text = text.replace(/(?:^|\s)\(([^)\n]+)\)\s*\/\s*([a-zA-Z0-9_θαβγδλμπσωΔΩ]+|\([^)\n]+\))(?=\s|$|\.|\,)/g, (match, num, den) => {
+    if (/[\^\*\+θαβγδλμπσωΔΩ\\_]|\b(sin|cos|tan|sqrt)\b/i.test(num) || /[\^\*\+θαβγδλμπσωΔΩ\\_]/i.test(den)) {
+      const cleanNum = normalizeAsciiEquationToLatex(num);
+      const cleanDen = normalizeAsciiEquationToLatex(den.replace(/^\(|\)$/g, ''));
+      return ` $\\frac{${cleanNum}}{${cleanDen}}$`;
+    }
+    return match;
+  });
+
+  // 4. High-Yield Physiological Equations (e.g. V̇A = (PACO2 - PH2O)/K or Vmax / Km)
+  text = text.replace(/\b(V̇A|V\.A|V̇O2|V̇CO2|Vmax|Km)\s*=\s*([^\n\.,;]+)/gi, (_, lhs, rhs) => {
     let cleanLhs = lhs;
     if (/V̇A|V\.A/i.test(lhs)) cleanLhs = '\\dot{V}_{\\text{A}}';
     else if (/V̇O2/i.test(lhs)) cleanLhs = '\\dot{V}_{\\text{O}_2}';
@@ -98,7 +271,6 @@ function normalizeScientificMathNotation(input: string): string {
     else if (/Vmax/i.test(lhs)) cleanLhs = 'V_{\\max}';
     else if (/Km/i.test(lhs)) cleanLhs = 'K_{\\text{m}}';
 
-    // Format fraction rhs like (A - B)/C
     let cleanRhs = rhs.trim();
     cleanRhs = cleanRhs
       .replace(/PaO2|Pao2/gi, 'P_{\\text{a}\\text{O}_2}')
@@ -116,8 +288,7 @@ function normalizeScientificMathNotation(input: string): string {
     return `$${cleanLhs} = ${cleanRhs}$`;
   });
 
-  // 3. Isolated Physiological Gas Pressures & Variables
-  // PaO2, PAO2, PaCO2, PACO2, PvO2, PH2O, pKa, pKb, pH, pOH, Vmax, Km, Ka, Kb, Kw, Kp, Kc
+  // 5. Isolated Physiological Gas Pressures & Variables
   text = text.replace(/\b(PaO2|PAO2|PaCO2|PACO2|PvO2|PH2O)\b/g, (match) => {
     switch (match.toUpperCase()) {
       case 'PAO2': return '$P_{\\text{a}\\text{O}_2}$';
@@ -128,7 +299,6 @@ function normalizeScientificMathNotation(input: string): string {
     }
   });
 
-  // Handle case variations for PAO2 vs PaO2
   text = text.replace(/\b(P[Aa]O2|P[Aa]CO2)\b/g, (match) => {
     if (match.startsWith('PA')) {
       return match.includes('CO') ? '$P_{\\text{A}\\text{CO}_2}$' : '$P_{\\text{A}\\text{O}_2}$';
@@ -153,8 +323,7 @@ function normalizeScientificMathNotation(input: string): string {
     }
   });
 
-  // 4. Common Chemical Formulas & Ions (Safe boundary checks)
-  // H2O, CO2, O2, N2, H2SO4, HNO3, HCl, NaOH, NaCl, CaCO3, Ca(OH)2, HCO3-, SO4 2-, PO4 3-, Ca2+, Mg2+, Na+, K+, Cl-, NH4+, CH4, C6H12O6
+  // 6. Common Chemical Formulas & Ions (Safe boundary checks)
   text = text.replace(/\b(H2O|CO2|H2SO4|HNO3|CaCO3|C6H12O6|CH4|NH4\+|HCO3\-)\b/g, (match) => {
     switch (match) {
       case 'H2O': return '$\\text{H}_2\\text{O}$';
@@ -186,14 +355,36 @@ function normalizeScientificMathNotation(input: string): string {
   text = text.replace(/\b(PO4\s*3\-|PO4\^3\-|PO4\-3)\b/gi, '$\\text{PO}_4^{3-}$');
   text = text.replace(/\b(NO3\-)\b/gi, '$\\text{NO}_3^-$');
 
-  // 5. Scientific Powers & Exponents (e.g. 10^-6, 10-6 in scientific contexts, 10^3, 3 x 10^8)
+  // Chemical Reactions: e.g. 2H2 + O2 -> 2H2O or N2 + 3H2 <=> 2NH3
+  text = text.replace(/([0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*(?:\s*\+\s*[0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*)*)\s*(-->|->|=>|⇌|<=>|<==>)\s*([0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*(?:\s*\+\s*[0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*)*)/g, (match, lhs, arrow, rhs) => {
+    // Only convert if it looks like a genuine chemical reaction
+    if (/\b(H2|O2|N2|H2O|CO2|NH3|HCl|NaOH|NaCl|CH4|C6H12O6)\b/i.test(match)) {
+      const isEq = arrow.includes('<') || arrow.includes('⇌');
+      const arrowLatex = isEq ? '\\rightleftharpoons' : '\\rightarrow';
+
+      const fmtSide = (side: string) => {
+        return side.split('+').map(part => {
+          const t = part.trim();
+          const m = t.match(/^(\d+)\s*(.*)$/);
+          const coef = m ? m[1] + ' ' : '';
+          const formula = m ? m[2] : t;
+          const chemFormula = formula.replace(/([A-Za-z\(\)])(\d+)/g, '$1_{$2}');
+          return `${coef}\\mathrm{${chemFormula}}`;
+        }).join(' + ');
+      };
+
+      return `$$${fmtSide(lhs)} ${arrowLatex} ${fmtSide(rhs)}$$`;
+    }
+    return match;
+  });
+
+  // 7. Scientific Powers & Exponents (e.g. 10^-6, 10-6 in scientific contexts, 10^3, 3 x 10^8)
   text = text.replace(/(\d+(?:\.\d+)?)\s*(?:[x×\*]\s*)?10\^([+-]?\d+)/g, '$$$1 \\times 10^{$2}$$');
   text = text.replace(/\b10\^([+-]?\d+)/g, '$$10^{$1}$$');
-  text = text.replace(/\b10\-(\d{1,2})\b/g, '$$10^{-$1}$$'); // e.g. 10-6 -> 10^-6
+  text = text.replace(/\b10\-(\d{1,2})\b/g, '$$10^{-$1}$$');
 
-  // 6. Common Physics/Chemistry Units & Notation
-  // e.g. 37 °C -> 37 °C, 100 mmHg -> 100 mmHg
-  text = text.replace(/\b(\d+(?:\.\d+)?)\s*(mmHg|mL\/min|mol\/L|mg\/dL|m\/s\^2|m\/s|kJ\/mol|cm\^3)\b/g, (match, val, unit) => {
+  // 8. Common Physics/Chemistry Units & Notation (e.g. 37 °C, 100 mmHg, 9.8 m/s^2)
+  text = text.replace(/\b(\d+(?:\.\d+)?)\s*(mmHg|mL\/min|mol\/L|mg\/dL|m\/s\^2|m\/s|kJ\/mol|cm\^3)\b/g, (_, val, unit) => {
     return `$${val}\\ \\text{${unit}}$`;
   });
 
@@ -252,13 +443,13 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = React.m
     // 3. Extract and render Inline Math $ ... $ or \( ... \)
     text = text.replace(/(?<!\\)\$([^\$\n]+?)(?<!\\)\$/g, (_, math) => {
       const idx = mathBlocks.length;
-      const html = `<span class="inline-math px-1">${renderKatexSafe(math, false)}</span>`;
+      const html = `<span class="inline-math px-0.5">${renderKatexSafe(math, false)}</span>`;
       mathBlocks.push(html);
       return `@@MATH_BLOCK_${idx}@@`;
     });
     text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => {
       const idx = mathBlocks.length;
-      const html = `<span class="inline-math px-1">${renderKatexSafe(math, false)}</span>`;
+      const html = `<span class="inline-math px-0.5">${renderKatexSafe(math, false)}</span>`;
       mathBlocks.push(html);
       return `@@MATH_BLOCK_${idx}@@`;
     });
@@ -285,7 +476,7 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = React.m
           const isHeader = rIdx === 0;
           const cols = row.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
           if (cols.length === 0 || cols.every(c => /^[-:]+$/.test(c))) {
-            return; // Skip separator line
+            return;
           }
           tableHtml += `<tr class="${isHeader ? 'bg-slate-800/80 font-bold text-white' : 'border-t border-slate-800/60 hover:bg-slate-900/40'}">`;
           cols.forEach(col => {
@@ -397,7 +588,6 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = React.m
 
     // Fail-safe Invariant check: Guaranteed zero internal placeholder leaks to DOM
     if (finalHtml.includes('MATH_BLOCK_') || finalHtml.includes('CODE_BLOCK_') || finalHtml.includes('PRESERVED_MATH_')) {
-      // In production, fallback to clean math rendering if any rogue token remained
       finalHtml = finalHtml.replace(/[@_]+(?:MATH|CODE|PRESERVED)[A-Z_0-9]*[@_]+/g, '');
     }
 
@@ -443,5 +633,3 @@ function formatInline(str: string): string {
 
   return formatted;
 }
-
-
