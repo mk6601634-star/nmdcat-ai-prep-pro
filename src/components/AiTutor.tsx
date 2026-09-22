@@ -471,10 +471,10 @@ export const AiTutor: React.FC<AiTutorProps> = ({
         </div>
 
         {/* Sub-tab Toggle */}
-        <div className="flex w-full sm:w-auto rounded-2xl border border-slate-700/70 bg-slate-900/80 p-1 shadow-inner">
+        <div className="flex flex-wrap sm:flex-nowrap w-full sm:w-auto rounded-2xl border border-slate-700/70 bg-slate-900/80 p-1 shadow-inner gap-1">
           <button
             onClick={() => setActiveSubTab('chat')}
-            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
               activeSubTab === 'chat' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -482,7 +482,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
           </button>
           <button
             onClick={() => setActiveSubTab('imageDoubt')}
-            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
               activeSubTab === 'imageDoubt' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -490,7 +490,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
           </button>
           <button
             onClick={() => setActiveSubTab('mnemonic')}
-            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
               activeSubTab === 'mnemonic' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -511,7 +511,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
               </div>
               <button
                 onClick={handleNewConversation}
-                className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-lg flex items-center gap-1 transition-all shadow-md"
+                className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-lg flex items-center gap-1 transition-all shadow-md shrink-0 whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>New Chat</span>
@@ -536,7 +536,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                           : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-400'
                       }`}
                     >
-                      <div className="flex items-center gap-2 overflow-hidden">
+                      <div className="flex items-center gap-2 overflow-hidden min-w-0">
                         <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
                         <div className="truncate">
                           <p className="text-xs font-semibold truncate text-white">{conv.title || 'Lesson'}</p>
@@ -546,7 +546,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
 
                       <button
                         onClick={(e) => handleDeleteConversation(e, conv.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-500 transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-500 transition-opacity shrink-0 ml-1"
                         title="Delete conversation"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -572,23 +572,23 @@ export const AiTutor: React.FC<AiTutorProps> = ({
             
             {/* Top Toolbar: Subject & Teaching Strategy */}
             <div className="p-3.5 bg-slate-950/80 border-b border-slate-800 flex flex-col gap-2.5">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
                 {/* Mobile History Toggle & Subject Selector */}
-                <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
+                <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 max-w-full custom-scrollbar py-0.5">
                   <button
                     onClick={() => setShowHistoryDrawer(true)}
-                    className="lg:hidden px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0"
+                    className="lg:hidden px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 whitespace-nowrap"
                   >
                     <History className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Chats</span>
                   </button>
 
-                  <span className="text-[10px] font-bold text-slate-500 uppercase mr-1 hidden sm:inline">Subject:</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mr-1 hidden sm:inline shrink-0">Subject:</span>
                   {(['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'] as SubjectType[]).map(sub => (
                     <button
                       key={sub}
                       onClick={() => setSubject(sub)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap ${
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 whitespace-nowrap ${
                         subject === sub 
                           ? 'bg-emerald-500 text-slate-950 shadow-sm' 
                           : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -601,7 +601,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
 
                 <button
                   onClick={handleNewConversation}
-                  className="hidden sm:flex px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg items-center gap-1 border border-slate-700 transition-all shrink-0"
+                  className="hidden sm:flex px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg items-center gap-1 border border-slate-700 transition-all shrink-0 whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5 text-emerald-400" />
                   <span>New Chat</span>
@@ -609,8 +609,8 @@ export const AiTutor: React.FC<AiTutorProps> = ({
               </div>
 
               {/* Teaching Strategy Mode Tabs */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-850">
-                <div className="flex items-center gap-1 overflow-x-auto w-full custom-scrollbar pb-0.5">
+              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-1.5 border-t border-slate-800/80">
+                <div className="flex items-center gap-1.5 overflow-x-auto min-w-0 max-w-full custom-scrollbar py-0.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase mr-1 shrink-0">Strategy:</span>
                   {[
                     { id: 'standard', label: 'Standard' },
@@ -624,7 +624,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                       <button
                         key={m.id}
                         onClick={() => setTeachingMode(m.id as AiTeachingMode)}
-                        className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap border ${
+                        className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 whitespace-nowrap border ${
                           isSelected
                             ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
                             : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
@@ -636,16 +636,16 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                   })}
                 </div>
 
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border hidden md:inline-block shrink-0 ${modeMetadata[teachingMode].color}`}>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border hidden md:inline-block shrink-0 whitespace-nowrap ${modeMetadata[teachingMode].color}`}>
                   {modeMetadata[teachingMode].badge}
                 </span>
               </div>
 
               {/* Mode Description Bar */}
               <div className="text-[11px] text-slate-400 flex items-center justify-between bg-slate-900/60 px-3 py-1 rounded-lg border border-slate-800/60">
-                <span>{modeMetadata[teachingMode].desc}</span>
+                <span className="truncate mr-2">{modeMetadata[teachingMode].desc}</span>
                 {teachingMode === 'teachUntilUnderstand' && (
-                  <span className="text-purple-300 font-bold text-[10px]">
+                  <span className="text-purple-300 font-bold text-[10px] shrink-0">
                     Mastery Stage: {masteryState.currentStage}/{masteryState.totalStages}
                   </span>
                 )}
@@ -691,10 +691,10 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                       <FormattedMathContent content={msg.text} />
 
                       {/* Message Footer: Timestamp & Actions */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-1.5 border-t border-slate-700/40">
-                        <span>{msg.time}</span>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 mt-2 pt-1.5 border-t border-slate-700/40">
+                        <span className="shrink-0">{msg.time}</span>
                         {!isUser && (
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 shrink-0">
                             <button
                               onClick={() => copyToClipboard(msg.text)}
                               className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
@@ -729,7 +729,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
             {showScrollBottom && (
               <button
                 onClick={() => scrollToBottom('smooth')}
-                className="absolute bottom-20 right-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full shadow-2xl border border-emerald-400 flex items-center gap-1.5 text-xs transition-all transform animate-bounce z-10"
+                className="absolute bottom-20 right-4 sm:right-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-3.5 py-1.5 rounded-full shadow-2xl border border-emerald-300 flex items-center gap-1.5 text-xs transition-all z-20 shadow-slate-950/80 hover:scale-105 active:scale-95"
               >
                 <ArrowDown className="w-3.5 h-3.5" />
                 <span>Jump to latest</span>
@@ -742,7 +742,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                 e.preventDefault();
                 handleSendMessage();
               }}
-              className="p-3.5 bg-slate-950/90 border-t border-slate-800 flex gap-2"
+              className="p-3.5 bg-slate-950/90 border-t border-slate-800 flex items-center gap-2"
             >
               <label htmlFor="ai-tutor-query" className="sr-only">Ask AI Tutor</label>
               <input
@@ -753,12 +753,12 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                 value={userInput}
                 disabled={chatAction.isLoading}
                 onChange={(e) => setUserInput(e.target.value)}
-                className="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
+                className="flex-1 min-w-0 bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={chatAction.isLoading || !userInput.trim()}
-                className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-lg active:scale-95"
+                className="shrink-0 px-4 sm:px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-lg active:scale-95 whitespace-nowrap"
               >
                 {chatAction.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 <span className="hidden sm:inline">{chatAction.isLoading ? 'Answering...' : 'Send'}</span>
