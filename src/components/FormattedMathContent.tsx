@@ -43,6 +43,20 @@ function normalizeScientificMathNotation(input: string): string {
 
   let text = input;
 
+  // 0. Standalone $ on separate lines -> $$ display math
+  // e.g.:
+  // $
+  // u_c(x) = \sqrt{u_A^2 + u_B^2}
+  // $
+  text = text.replace(/(?:^|\n)[ \t]*\$[ \t]*\n([\s\S]+?)\n[ \t]*\$[ \t]*(?=\n|$)/g, (match, formula) => {
+    return `\n$$\n${formula.trim()}\n$$\n`;
+  });
+
+  // Standalone \begin{...} -> $$ display math
+  text = text.replace(/(?:^|\n)[ \t]*(\\begin\{(?:equation|align|aligned|gather|matrix|pmatrix|bmatrix|cases)\*?\}[\s\S]*?\\end\{(?:equation|align|aligned|gather|matrix|pmatrix|bmatrix|cases)\*?\})[ \t]*(?=\n|$)/g, (match, formula) => {
+    return `\n$$\n${formula.trim()}\n$$\n`;
+  });
+
   // 1. Protect existing LaTeX delimiters ($$, $, \[, \]) and code blocks (```)
   const preservedBlocks: string[] = [];
   text = text.replace(/```[\s\S]*?```|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|(?<!\\)\$[^\$\n]+?(?<!\\)\$|\\\([\s\S]*?\\\)/g, (match) => {
