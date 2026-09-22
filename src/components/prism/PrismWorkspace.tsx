@@ -45,6 +45,8 @@ export interface PrismWorkspaceProps {
   savedMistakes?: SavedMistake[];
   setSavedMistakes?: React.Dispatch<React.SetStateAction<SavedMistake[]>>;
   setExamHistory?: React.Dispatch<React.SetStateAction<ExamAttempt[]>>;
+  selectedSubject?: SubjectType;
+  onSubjectChange?: (subject: SubjectType) => void;
 }
 
 export const PrismWorkspace: React.FC<PrismWorkspaceProps> = ({
@@ -52,13 +54,26 @@ export const PrismWorkspace: React.FC<PrismWorkspaceProps> = ({
   onSignIn,
   savedMistakes = [],
   setSavedMistakes,
-  setExamHistory
+  setExamHistory,
+  selectedSubject,
+  onSubjectChange
 }) => {
   // Stepper & Active Stage state
   const [activeStage, setActiveStage] = useState<'input' | 'evidence' | 'materials' | 'quiz' | 'saved'>('input');
   
   // Inputs
-  const [subject, setSubject] = useState<SubjectType>('Biology');
+  const [subject, setSubject] = useState<SubjectType>(selectedSubject || 'Biology');
+
+  useEffect(() => {
+    if (selectedSubject && selectedSubject !== subject) {
+      setSubject(selectedSubject);
+    }
+  }, [selectedSubject]);
+
+  const handleSubjectChange = (newSubject: SubjectType) => {
+    setSubject(newSubject);
+    onSubjectChange?.(newSubject);
+  };
   const [topic, setTopic] = useState<string>('Cell Membrane & Fluid Mosaic Model');
   const [textbookContent, setTextbookContent] = useState<string>(
     'The cell membrane follows the Fluid Mosaic Model proposed by Singer and Nicolson (1972). It is composed of a phospholipid bilayer with embedded intrinsic and extrinsic proteins. Phospholipids have hydrophilic polar phosphate heads and hydrophobic non-polar fatty acid tails. Carbohydrates form glycoproteins and glycolipids on the outer surface (glycocalyx). Cholesterol regulates membrane fluidity at varying temperatures. In plants and bacteria, active transport is driven by proton gradients.'

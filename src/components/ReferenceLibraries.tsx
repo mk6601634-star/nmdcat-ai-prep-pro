@@ -33,6 +33,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { FormattedMathContent } from './FormattedMathContent';
+import { SubjectSelector, SCIENCE_SUBJECTS, ALL_NMDCAT_SUBJECTS } from './SubjectSelector';
 import { 
   subscribeToPublishedFormulas, 
   subscribeToPublishedReactions, 
@@ -77,13 +78,17 @@ interface ReferenceLibrariesProps {
   firebaseUser?: User | null;
   activeSubTab?: string;
   onSignIn?: () => void;
+  selectedSubject?: SubjectType | null;
+  onSubjectChange?: (subject: SubjectType) => void;
 }
 
 export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({ 
   onAddFlashcard, 
   firebaseUser, 
   activeSubTab: parentActiveSubTab, 
-  onSignIn 
+  onSignIn,
+  selectedSubject: propSelectedSubject,
+  onSubjectChange
 }) => {
   const getInternalTab = (tab: string): 'formulas' | 'reactions' | 'definitions' | 'mindmaps' | 'mnemonics' | 'knowledge_graph' => {
     switch (tab) {
@@ -100,6 +105,19 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'formulas' | 'reactions' | 'definitions' | 'mindmaps' | 'mnemonics' | 'knowledge_graph'>(() => 
     parentActiveSubTab ? getInternalTab(parentActiveSubTab) : 'formulas'
   );
+
+  const [generatorSubject, setGeneratorSubject] = useState<SubjectType>(() => {
+    if (propSelectedSubject) return propSelectedSubject;
+    if (parentActiveSubTab === 'formula_lib') return 'Physics';
+    if (parentActiveSubTab === 'reaction_lib') return 'Chemistry';
+    return 'Biology';
+  });
+
+  useEffect(() => {
+    if (propSelectedSubject) {
+      setGeneratorSubject(propSelectedSubject);
+    }
+  }, [propSelectedSubject]);
 
   useEffect(() => {
     if (parentActiveSubTab) {
@@ -382,6 +400,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       return;
     }
 
+    if (!generatorSubject) {
+      setAiError('Please select a subject (Physics, Chemistry, or Biology) for formula generation');
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
     setGeneratedContent(null);
@@ -391,7 +414,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subject: effectiveSubjectFilter === 'All' ? 'Physics' : effectiveSubjectFilter,
+          subject: generatorSubject,
           chapter: aiConcept.trim() || 'General',
           topic: aiTopic,
           difficultyMode: aiDifficulty
@@ -413,7 +436,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     try {
       const formulasToSave: Array<FormulaItem & { id: string }> = generatedContent.formulas.map((f: any, idx: number) => ({
         id: `formula_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
-        subject: (effectiveSubjectFilter === 'All' ? 'Physics' : effectiveSubjectFilter) as SubjectType,
+        subject: generatorSubject,
         chapter: aiConcept || 'High-Yield Revision',
         title: f.title || aiTopic,
         formula: f.formula || '',
@@ -453,6 +476,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       return;
     }
 
+    if (!generatorSubject) {
+      setAiError('Please select a subject (Chemistry or Biology) for reaction generation');
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
     setGeneratedContent(null);
@@ -462,6 +490,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          subject: generatorSubject,
           category: 'Organic',
           chapter: aiConcept.trim() || 'General Chemistry',
           topic: aiTopic,
@@ -524,6 +553,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       return;
     }
 
+    if (!generatorSubject) {
+      setAiError('Please select a subject for definition generation');
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
     setGeneratedContent(null);
@@ -533,7 +567,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subject: effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter,
+          subject: generatorSubject,
           chapter: aiConcept.trim() || 'General PMDC Syllabus',
           topic: aiTopic,
           difficultyMode: aiDifficulty
@@ -555,7 +589,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     try {
       const defsToSave: Array<DefinitionItem & { id: string }> = generatedContent.definitions.map((d: any, idx: number) => ({
         id: `def_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
-        subject: (effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter) as SubjectType,
+        subject: generatorSubject,
         chapter: aiConcept || 'High-Yield Terms',
         term: d.term || aiTopic,
         nmdcatShortDefinition: d.nmdcatShortDefinition || '',
@@ -593,6 +627,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       return;
     }
 
+    if (!generatorSubject) {
+      setAiError('Please select a subject for mind map generation');
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
     setGeneratedContent(null);
@@ -602,7 +641,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subject: effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter,
+          subject: generatorSubject,
           topic: aiTopic,
           difficultyMode: aiDifficulty
         })
@@ -659,7 +698,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
 
       const newMindMap: ConceptMindMap & { id: string } = {
         id: `mindmap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        subject: (effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter) as SubjectType,
+        subject: generatorSubject,
         title: aiTopic,
         topic: aiTopic,
         centerConcept: centerConcept || aiTopic,
@@ -692,6 +731,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       return;
     }
 
+    if (!generatorSubject) {
+      setAiError('Please select a subject for mnemonic generation');
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
     setGeneratedContent(null);
@@ -701,7 +745,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subject: effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter,
+          subject: generatorSubject,
           topic: aiTopic,
           concept: aiConcept,
           difficultyMode: aiDifficulty
@@ -724,7 +768,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       const mnemonic = generatedContent.mnemonics?.[0] || {};
       const newMnemonic: Flashcard & { id: string } = {
         id: `mnemonic_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        subject: (effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter) as SubjectType,
+        subject: generatorSubject,
         topic: aiTopic,
         front: mnemonic.mnemonic || '',
         back: mnemonic.explanation || '',
@@ -758,6 +802,11 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
       return;
     }
 
+    if (!generatorSubject) {
+      setAiError('Please select a subject for knowledge graph generation');
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
     setGeneratedContent(null);
@@ -767,7 +816,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subject: effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter,
+          subject: generatorSubject,
           topic: aiTopic,
           difficultyMode: aiDifficulty
         })
@@ -787,7 +836,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
     const newKg = {
       id: `kg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       title: kg.centralConcept || aiTopic,
-      subject: kg.subject || (effectiveSubjectFilter === 'All' ? 'Biology' : effectiveSubjectFilter),
+      subject: kg.subject || generatorSubject,
       nodes: kg.nodes || [],
       edges: kg.edges || [],
       highYieldTips: kg.highYieldTips || [],
@@ -1015,6 +1064,26 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+
+          {/* Subject Context Selector */}
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1.5">Subject Context *</label>
+            <SubjectSelector
+              variant="pills"
+              value={generatorSubject}
+              onChange={(s) => {
+                setGeneratorSubject(s);
+                onSubjectChange?.(s);
+              }}
+              allowedSubjects={
+                activeSubTab === 'reactions'
+                  ? ['Chemistry', 'Biology']
+                  : activeSubTab === 'definitions'
+                  ? ALL_NMDCAT_SUBJECTS
+                  : SCIENCE_SUBJECTS
+              }
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

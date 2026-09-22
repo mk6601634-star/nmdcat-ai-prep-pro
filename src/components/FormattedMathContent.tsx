@@ -57,9 +57,9 @@ function escapeHtml(str: string): string {
 }
 
 /**
- * Normalizes Greek Unicode characters and standard math operators to standard LaTeX commands
+ * Comprehensive Greek Unicode and standard math operators normalizer
  */
-function normalizeGreekAndOperators(str: string): string {
+export function normalizeGreekSymbols(str: string): string {
   return str
     .replace(/\bpi\b/g, '\\pi ')
     .replace(/\btheta\b/g, '\\theta ')
@@ -69,6 +69,11 @@ function normalizeGreekAndOperators(str: string): string {
     .replace(/\blambda\b/g, '\\lambda ')
     .replace(/\bmu\b/g, '\\mu ')
     .replace(/\bDelta\b/g, '\\Delta ')
+    .replace(/\bomega\b/g, '\\omega ')
+    .replace(/\bsigma\b/g, '\\sigma ')
+    .replace(/\brho\b/g, '\\rho ')
+    .replace(/\bepsilon\b/g, '\\varepsilon ')
+    .replace(/[εϵ]/g, '\\varepsilon ')
     .replace(/θ/g, '\\theta ')
     .replace(/α/g, '\\alpha ')
     .replace(/β/g, '\\beta ')
@@ -79,18 +84,54 @@ function normalizeGreekAndOperators(str: string): string {
     .replace(/π/g, '\\pi ')
     .replace(/σ/g, '\\sigma ')
     .replace(/ω/g, '\\omega ')
+    .replace(/ρ/g, '\\rho ')
+    .replace(/τ/g, '\\tau ')
+    .replace(/η/g, '\\eta ')
+    .replace(/ν/g, '\\nu ')
+    .replace(/[ϕφ]/g, '\\phi ')
+    .replace(/ψ/g, '\\psi ')
+    .replace(/χ/g, '\\chi ')
+    .replace(/κ/g, '\\kappa ')
+    .replace(/ξ/g, '\\xi ')
+    .replace(/ζ/g, '\\zeta ')
     .replace(/Δ/g, '\\Delta ')
     .replace(/Ω/g, '\\Omega ')
+    .replace(/Σ/g, '\\Sigma ')
+    .replace(/Φ/g, '\\Phi ')
+    .replace(/Ψ/g, '\\Psi ')
     .replace(/±/g, '\\pm ')
     .replace(/≠/g, '\\ne ')
     .replace(/≤/g, '\\le ')
     .replace(/≥/g, '\\ge ')
     .replace(/≈/g, '\\approx ')
+    .replace(/∝/g, '\\propto ')
     .replace(/∞/g, '\\infty ')
     .replace(/°C/g, '^\\circ\\text{C}')
     .replace(/°/g, '^\\circ')
     .replace(/×/g, '\\times ')
-    .replace(/·/g, '\\cdot ');
+    .replace(/·/g, ' \\cdot ');
+}
+
+/**
+ * Normalizes Unicode vulgar fractions to LaTeX fractions
+ */
+export function normalizeVulgarFractions(str: string): string {
+  return str
+    .replace(/½/g, '\\frac{1}{2}')
+    .replace(/¼/g, '\\frac{1}{4}')
+    .replace(/¾/g, '\\frac{3}{4}')
+    .replace(/⅓/g, '\\frac{1}{3}')
+    .replace(/⅔/g, '\\frac{2}{3}')
+    .replace(/⅕/g, '\\frac{1}{5}')
+    .replace(/⅖/g, '\\frac{2}{5}')
+    .replace(/⅗/g, '\\frac{3}{5}')
+    .replace(/⅘/g, '\\frac{4}{5}')
+    .replace(/⅙/g, '\\frac{1}{6}')
+    .replace(/⅚/g, '\\frac{5}{6}')
+    .replace(/⅛/g, '\\frac{1}{8}')
+    .replace(/⅜/g, '\\frac{3}{8}')
+    .replace(/⅝/g, '\\frac{5}{8}')
+    .replace(/⅞/g, '\\frac{7}{8}');
 }
 
 function matchParen(str: string, openIdx: number): number {
@@ -105,7 +146,10 @@ function matchParen(str: string, openIdx: number): number {
   return -1;
 }
 
-function normalizeFractions(text: string): string {
+/**
+ * Robust fraction normalizer handling single and composite algebraic terms
+ */
+export function normalizeFractions(text: string): string {
   let changed = true;
   let s = text;
   let iterations = 0;
@@ -116,6 +160,12 @@ function normalizeFractions(text: string): string {
 
     let slashIdx = s.indexOf('/');
     while (slashIdx !== -1) {
+      const beforeSlash = s.slice(0, slashIdx);
+      if (/\\(frac|text|mathrm|sqrt|left|right)\{[^{}]*$/.test(beforeSlash)) {
+        slashIdx = s.indexOf('/', slashIdx + 1);
+        continue;
+      }
+
       let before = s.slice(0, slashIdx).trimEnd();
       let after = s.slice(slashIdx + 1).trimStart();
       
@@ -140,10 +190,11 @@ function normalizeFractions(text: string): string {
           p--;
         }
       } else {
-        const m = before.match(/([A-Za-z0-9_^{}\\\s\*\+\-\.]+)$/);
+        // Capture algebraic products before division: e.g. "\varepsilon_{0} \varepsilon_{r} A" or "v^{2} \sin(2\theta)" or "m_1 m_2" or "k Q_1 Q_2"
+        const m = before.match(/((?:\\?[a-zA-Z0-9_^{}\.]+|\\[a-zA-Z]+(?:\([^)]*\))?|\s*\*\s*|\s+)+)$/);
         if (m) {
           num = m[1].trim();
-          numStart = before.length - num.length;
+          numStart = before.length - m[1].length;
         }
       }
 
@@ -154,7 +205,7 @@ function normalizeFractions(text: string): string {
           denEnd = closeIdx + 1;
         }
       } else {
-        const m = after.match(/^([A-Za-z0-9_^{}\\\.\^]+)/);
+        const m = after.match(/^(\\?[a-zA-Z0-9_^{}\.]+|\\[a-zA-Z]+)/);
         if (m) {
           den = m[1].trim();
           denEnd = m[0].length;
@@ -164,7 +215,19 @@ function normalizeFractions(text: string): string {
       if (num && den && numStart !== -1 && denEnd !== -1) {
         const prefix = before.slice(0, numStart);
         const suffix = after.slice(denEnd);
-        const frac = `\\frac{${num.trim()}}{${den.trim()}}`;
+        
+        let cleanNum = num.replace(/\s*\*\s*/g, ' ').replace(/\s+/g, ' ').trim();
+        let cleanDen = den.replace(/\s*\*\s*/g, ' ').replace(/\s+/g, ' ').trim();
+        
+        // Remove outer parens inside num/den if present
+        if (cleanNum.startsWith('(') && cleanNum.endsWith(')')) {
+          cleanNum = cleanNum.slice(1, -1).trim();
+        }
+        if (cleanDen.startsWith('(') && cleanDen.endsWith(')')) {
+          cleanDen = cleanDen.slice(1, -1).trim();
+        }
+
+        const frac = `\\frac{${cleanNum}}{${cleanDen}}`;
         s = prefix + frac + suffix;
         changed = true;
         break;
@@ -181,33 +244,46 @@ function normalizeFractions(text: string): string {
 }
 
 /**
- * Converts ASCII math equations (like R = (v^2*sin(2θ))/g or a = (vf - vi)/t)
- * into standard LaTeX equations.
+ * Converts ASCII math equations (like R = (v^2*sin(2θ))/g or C = ε_0 ε_r A/d or U = ½CV^2)
+ * into canonical LaTeX equations.
  */
-function normalizeAsciiEquationToLatex(expr: string): string {
-  let s = normalizeGreekAndOperators(expr.trim());
+export function normalizeMathExpression(expr: string): string {
+  let s = normalizeVulgarFractions(expr.trim());
+  s = normalizeGreekSymbols(s);
+
+  // Subscripts: \varepsilon_0 -> \varepsilon_{0}, \varepsilon_r -> \varepsilon_{r}, v_i -> v_{i}, V_max -> V_{\max}
+  s = s.replace(/(\\?[a-zA-Z]+)\s*_([a-zA-Z0-9]+)/g, (match, prefix, sub) => {
+    if (sub === 'max') return `${prefix}_{\\max}`;
+    if (sub === 'min') return `${prefix}_{\\min}`;
+    return `${prefix}_{${sub}}`;
+  });
 
   // Square roots: sqrt(...) -> \sqrt{...}
-  s = s.replace(/sqrt\(([^()]+)\)/gi, (_, inner) => `\\sqrt{${normalizeFractions(inner)}}`);
+  s = s.replace(/sqrt\(([^()]+)\)/gi, (_, inner) => `\\sqrt{${inner}}`);
+  s = s.replace(/√\(([^()]+)\)/g, (_, inner) => `\\sqrt{${inner}}`);
+  s = s.replace(/√([a-zA-Z0-9]+)/g, (_, inner) => `\\sqrt{${inner}}`);
 
-  // Trig functions: sin, cos, tan, cot, sec, csc
+  // Trig / Log functions: sin(2θ) -> \sin(2\theta), cos(θ) -> \cos(\theta)
   s = s.replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|exp)\s*\(([^()]+)\)/gi, '\\$1($2)');
   s = s.replace(/\b(sin|cos|tan|cot|sec|csc|log|ln|exp)\s+([A-Za-z0-9\\_]+)/gi, '\\$1 $2');
 
-  // Fractions with robust nested paren support
+  // Powers: V^2 -> V^{2}, x^(2) -> x^{2}, 10^-3 -> 10^{-3}, (x+1)^2 -> (x+1)^{2}
+  s = s.replace(/\*\*([0-9a-zA-Z\+\-]+|\([+-]?[0-9a-zA-Z]+\))/g, '^{$1}');
+  s = s.replace(/\^([0-9a-zA-Z]+|\([+-]?[0-9a-zA-Z]+\)|-[0-9a-zA-Z]+)/g, '^{$1}');
+  s = s.replace(/\^\{\(([^()]+)\)\}/g, '^{$1}');
+
+  // Multiplication: 2*C -> 2C, 1/2 * C * V^2 -> 1/2 C V^2
+  s = s.replace(/(\d+)\s*\*\s*([a-zA-Z\\])/g, '$1$2');
+  s = s.replace(/\s*\*\s*/g, ' ');
+
+  // Fractions: (v^2*sin(2θ))/g -> \frac{v^2\sin(2\theta)}{g}, Q^2/(2*C) -> \frac{Q^2}{2C}
   s = normalizeFractions(s);
 
-  // Powers: x^2 or x^(2) or x**2
-  s = s.replace(/\*\*(\d+|\([+-]?\d+\))/g, '^{$1}');
-  s = s.replace(/\^([a-zA-Z0-9]+)/g, '^{$1}');
+  // Clean trailing spaces before parens: "\theta )" -> "\theta)"
+  s = s.replace(/(\\[a-zA-Z]+)\s+\)/g, '$1)');
+  s = s.replace(/\s+\)/g, ')');
+  s = s.replace(/\(\s+/g, '(');
 
-  // Multiplication: * in math -> \cdot
-  s = s.replace(/\s*\*\s*/g, ' \\cdot ');
-
-  // Subscripts: v_i, v_f, m_1, m_2, F_g, K_m, etc.
-  s = s.replace(/\b([a-zA-Z])_([a-zA-Z0-9]+)\b/g, '$1_{$2}');
-
-  // Clean redundant whitespace
   return s.replace(/\s+/g, ' ').trim();
 }
 
@@ -239,30 +315,33 @@ export function normalizeScientificMathNotation(input: string): string {
     return `@@PRESERVED_MATH_OR_CODE_${idx}@@`;
   });
 
-  // 2. High-Yield Mathematical & Physical Equations (e.g. R = (v^2*sin(2θ))/g or F = G*(m1*m2)/r^2)
-  // Matches expressions with = or \approx or \le or \ge or \propto containing math operators
-  text = text.replace(/(?:^|\n|\s)([a-zA-Z_][a-zA-Z0-9_]*(?:\([a-zA-Z0-9_, ]+\))?)\s*(=|\\approx|\\propto|\\le|\\ge)\s*([^\n,;]{3,})(?=\n|$|\.|\,)/g, (match, lhs, rel, rhs) => {
-    // Only convert if rhs has mathematical characters (^, /, *, +, -, \sqrt, sin, cos, tan, θ, etc.)
-    if (/[\^\/\*\+\-θαβγδλμπσωΔΩ\\_]|\b(sin|cos|tan|sqrt|log|ln|Vmax|Km)\b/i.test(rhs)) {
-      const cleanLhs = normalizeAsciiEquationToLatex(lhs);
-      const cleanRhs = normalizeAsciiEquationToLatex(rhs);
+  // 2. High-Yield Mathematical & Physical Equations (stops at prose boundaries)
+  text = text.replace(/(?:^|\n|\s)([a-zA-Z_][a-zA-Z0-9_]*(?:\([a-zA-Z0-9_, ]+\))?)\s*(=|\\approx|\\propto|\\le|\\ge)\s*([^;\n,\.]{2,}?)(?=\s+\b(and|where|with|which|when|then|if|or)\b|\n|$|\.|\,|;)/g, (match, lhs, rel, rhs) => {
+    if (/[\^\/\*\+\-θαβγδλμπσωΔΩεϵ½¼¾⅓⅔\\_]|\b(sin|cos|tan|sqrt|log|ln|Vmax|Km|eps)\b|\d/i.test(rhs)) {
+      const cleanLhs = normalizeMathExpression(lhs);
+      const cleanRhs = normalizeMathExpression(rhs);
       const prefix = match.startsWith('\n') ? '\n' : (match.startsWith(' ') ? ' ' : '');
       return `${prefix}$${cleanLhs} ${rel} ${cleanRhs}$`;
     }
     return match;
   });
 
-  // 3. Isolated ASCII Fractions with Parentheses (e.g. (v^2*sin(2θ))/g or (a+b)/(c+d))
-  text = text.replace(/(?:^|\s)\(([^)\n]+)\)\s*\/\s*([a-zA-Z0-9_θαβγδλμπσωΔΩ]+|\([^)\n]+\))(?=\s|$|\.|\,)/g, (match, num, den) => {
-    if (/[\^\*\+θαβγδλμπσωΔΩ\\_]|\b(sin|cos|tan|sqrt)\b/i.test(num) || /[\^\*\+θαβγδλμπσωΔΩ\\_]/i.test(den)) {
-      const cleanNum = normalizeAsciiEquationToLatex(num);
-      const cleanDen = normalizeAsciiEquationToLatex(den.replace(/^\(|\)$/g, ''));
-      return ` $\\frac{${cleanNum}}{${cleanDen}}$`;
+  // 3. Isolated ASCII Fractions with Parentheses or Symbols (e.g. Q^2/(2*C) or (v^2*sin(2θ))/g or (a+b)/(c+d))
+  text = text.replace(/(?:^|\s|\()([a-zA-Z0-9_θαβγδλμπσωΔΩεϵ\^\{\}\*\+\-]+|\([^)\n]+\))\s*\/\s*([a-zA-Z0-9_θαβγδλμπσωΔΩεϵ\^\{\}\*\+\-]+|\([^)\n]+\))(?=\s|$|\.|\,|\))/g, (match, num, den) => {
+    if (/[\^\*\+θαβγδλμπσωΔΩεϵ\\_]|\b(sin|cos|tan|sqrt)\b/i.test(match) || (num.length > 0 && den.length > 0 && isNaN(Number(num)) && isNaN(Number(den)))) {
+      const cleanExpr = normalizeMathExpression(`${num}/${den}`);
+      return ` $${cleanExpr}$`;
     }
     return match;
   });
 
-  // 4. High-Yield Physiological Equations (e.g. V̇A = (PACO2 - PH2O)/K or Vmax / Km)
+  // 4. Isolated math terms in prose (e.g. "ε_0", "ε_r", "V^2", "v^2", "Q^2", "½CV^2", "1/2*C*V^2")
+  text = text.replace(/(?:^|\s)(ε_0|ε_r|ε₀|εᵣ|V\^2|v\^2|Q\^2|r\^2|x\^2|t\^2|c\^2|½CV\^2|½mv\^2)(?=\s|$|\.|\,)/g, (_, term) => {
+    const clean = normalizeMathExpression(term);
+    return ` $${clean}$`;
+  });
+
+  // 5. High-Yield Physiological Equations (e.g. V̇A = (PACO2 - PH2O)/K or Vmax / Km)
   text = text.replace(/\b(V̇A|V\.A|V̇O2|V̇CO2|Vmax|Km)\s*=\s*([^\n\.,;]+)/gi, (_, lhs, rhs) => {
     let cleanLhs = lhs;
     if (/V̇A|V\.A/i.test(lhs)) cleanLhs = '\\dot{V}_{\\text{A}}';
@@ -280,15 +359,12 @@ export function normalizeScientificMathNotation(input: string): string {
       .replace(/PvO2|Pvo2/gi, 'P_{\\text{v}\\text{O}_2}')
       .replace(/PH2O|Ph2o/gi, 'P_{\\text{H}_2\\text{O}}');
 
-    const fracMatch = cleanRhs.match(/^\((.*?)\)\s*\/\s*([a-zA-Z0-9_\{\}\\]+)$/);
-    if (fracMatch) {
-      cleanRhs = `\\frac{${fracMatch[1]}}{${fracMatch[2]}}`;
-    }
+    cleanRhs = normalizeMathExpression(cleanRhs);
 
     return `$${cleanLhs} = ${cleanRhs}$`;
   });
 
-  // 5. Isolated Physiological Gas Pressures & Variables
+  // 6. Isolated Physiological Gas Pressures & Variables
   text = text.replace(/\b(PaO2|PAO2|PaCO2|PACO2|PvO2|PH2O)\b/g, (match) => {
     switch (match.toUpperCase()) {
       case 'PAO2': return '$P_{\\text{a}\\text{O}_2}$';
@@ -323,8 +399,8 @@ export function normalizeScientificMathNotation(input: string): string {
     }
   });
 
-  // 6. Common Chemical Formulas & Ions (Safe boundary checks)
-  text = text.replace(/\b(H2O|CO2|H2SO4|HNO3|CaCO3|C6H12O6|CH4|NH4\+|HCO3\-)\b/g, (match) => {
+  // 7. Common Chemical Formulas & Polyatomic Ions
+  text = text.replace(/(?<![a-zA-Z0-9])(H2O|CO2|H2SO4|HNO3|CaCO3|C6H12O6|CH4|NH4\+|HCO3\-)(?![a-zA-Z0-9])/g, (match) => {
     switch (match) {
       case 'H2O': return '$\\text{H}_2\\text{O}$';
       case 'CO2': return '$\\text{CO}_2$';
@@ -339,8 +415,7 @@ export function normalizeScientificMathNotation(input: string): string {
     }
   });
 
-  // Polyatomic and monoatomic ions: Ca2+, Mg2+, Na+, K+, Cl-, SO4 2-, SO4^2-, PO4 3-, PO4^3-
-  text = text.replace(/\b(Ca2\+|Mg2\+|Fe2\+|Fe3\+|Zn2\+|Cu2\+|Al3\+|Na\+|K\+|Cl\-)\b/g, (match) => {
+  text = text.replace(/(?<![a-zA-Z0-9])(Ca2\+|Mg2\+|Fe2\+|Fe3\+|Zn2\+|Cu2\+|Al3\+|Na\+|K\+|Cl\-)(?![a-zA-Z0-9])/g, (match) => {
     const el = match.slice(0, -2);
     const charge = match.slice(-2);
     if (charge === '2+' || charge === '3+') {
@@ -351,13 +426,12 @@ export function normalizeScientificMathNotation(input: string): string {
     return `$\\text{${singleEl}}^{${singleCharge}}$`;
   });
 
-  text = text.replace(/\b(SO4\s*2\-|SO4\^2\-|SO4\-2)\b/gi, '$\\text{SO}_4^{2-}$');
-  text = text.replace(/\b(PO4\s*3\-|PO4\^3\-|PO4\-3)\b/gi, '$\\text{PO}_4^{3-}$');
-  text = text.replace(/\b(NO3\-)\b/gi, '$\\text{NO}_3^-$');
+  text = text.replace(/(?<![a-zA-Z0-9])(SO4\s*2\-|SO4\^2\-|SO4\-2)(?![a-zA-Z0-9])/gi, '$\\text{SO}_4^{2-}$');
+  text = text.replace(/(?<![a-zA-Z0-9])(PO4\s*3\-|PO4\^3\-|PO4\-3)(?![a-zA-Z0-9])/gi, '$\\text{PO}_4^{3-}$');
+  text = text.replace(/(?<![a-zA-Z0-9])(NO3\-)(?![a-zA-Z0-9])/gi, '$\\text{NO}_3^-$');
 
   // Chemical Reactions: e.g. 2H2 + O2 -> 2H2O or N2 + 3H2 <=> 2NH3
-  text = text.replace(/([0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*(?:\s*\+\s*[0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*)*)\s*(-->|->|=>|⇌|<=>|<==>)\s*([0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*(?:\s*\+\s*[0-9]*\s*[A-Z][a-z0-9_\^\{\}\+\-\(\)]*)*)/g, (match, lhs, arrow, rhs) => {
-    // Only convert if it looks like a genuine chemical reaction
+  text = text.replace(/([0-9]*\s*[A-Z][A-Za-z0-9_\^\{\}\+\-\(\)]*(?:\s*\+\s*[0-9]*\s*[A-Z][A-Za-z0-9_\^\{\}\+\-\(\)]*)*)\s*(-->|->|=>|⇌|<=>|<==>)\s*([0-9]*\s*[A-Z][A-Za-z0-9_\^\{\}\+\-\(\)]*(?:\s*\+\s*[0-9]*\s*[A-Z][A-Za-z0-9_\^\{\}\+\-\(\)]*)*)/g, (match, lhs, arrow, rhs) => {
     if (/\b(H2|O2|N2|H2O|CO2|NH3|HCl|NaOH|NaCl|CH4|C6H12O6)\b/i.test(match)) {
       const isEq = arrow.includes('<') || arrow.includes('⇌');
       const arrowLatex = isEq ? '\\rightleftharpoons' : '\\rightarrow';
@@ -378,15 +452,10 @@ export function normalizeScientificMathNotation(input: string): string {
     return match;
   });
 
-  // 7. Scientific Powers & Exponents (e.g. 10^-6, 10-6 in scientific contexts, 10^3, 3 x 10^8)
+  // 8. Scientific Powers & Exponents (e.g. 10^-6, 10-6 in scientific contexts, 10^3, 3 x 10^8)
   text = text.replace(/(\d+(?:\.\d+)?)\s*(?:[x×\*]\s*)?10\^([+-]?\d+)/g, '$$$1 \\times 10^{$2}$$');
   text = text.replace(/\b10\^([+-]?\d+)/g, '$$10^{$1}$$');
   text = text.replace(/\b10\-(\d{1,2})\b/g, '$$10^{-$1}$$');
-
-  // 8. Common Physics/Chemistry Units & Notation (e.g. 37 °C, 100 mmHg, 9.8 m/s^2)
-  text = text.replace(/\b(\d+(?:\.\d+)?)\s*(mmHg|mL\/min|mol\/L|mg\/dL|m\/s\^2|m\/s|kJ\/mol|cm\^3)\b/g, (_, val, unit) => {
-    return `$${val}\\ \\text{${unit}}$`;
-  });
 
   // Restore preserved math and code blocks
   preservedBlocks.forEach((block, idx) => {
@@ -474,7 +543,7 @@ export const FormattedMathContent: React.FC<FormattedMathContentProps> = React.m
         let tableHtml = '<div class="overflow-x-auto my-3"><table class="w-full text-xs text-left border-collapse border border-slate-800 rounded-xl overflow-hidden">';
         tableRows.forEach((row, rIdx) => {
           const isHeader = rIdx === 0;
-          const cols = row.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
+          const cols = row.split('|').map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
           if (cols.length === 0 || cols.every(c => /^[-:]+$/.test(c))) {
             return;
           }

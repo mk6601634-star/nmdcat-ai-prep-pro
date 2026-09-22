@@ -60,6 +60,7 @@ import {
   Cpu
 } from 'lucide-react';
 import UiCard from './UiCard';
+import { FormattedMathContent } from './FormattedMathContent';
 import { AiQuizGenerator } from './AiQuizGenerator';
 import { AdminAiModelShifter } from './AdminAiModelShifter';
 import {
@@ -1684,7 +1685,7 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
                     </div>
                     <h4 className="font-bold text-white text-sm">{item.title}</h4>
                     <div className="p-3 bg-slate-900 rounded-xl text-center font-mono font-bold text-cyan-300 text-base border border-cyan-500/30">
-                      {item.formula}
+                      <FormattedMathContent content={item.formula} />
                     </div>
                     <div className="text-slate-400 space-y-1 text-[11px]">
                       <p><strong>Variables:</strong> {item.variables.join(', ')}</p>
@@ -1715,7 +1716,7 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
                     </div>
                     <h4 className="font-bold text-white text-sm">{rx.reactionName}</h4>
                     <div className="p-3 bg-slate-900 rounded-xl font-mono text-amber-300 font-bold border border-amber-500/30 overflow-x-auto">
-                      {rx.chemicalEquation}
+                      <FormattedMathContent content={rx.chemicalEquation} />
                     </div>
                     <p className="text-slate-300 text-[11px]"><strong>Mechanism:</strong> {rx.mechanism}</p>
                   </div>

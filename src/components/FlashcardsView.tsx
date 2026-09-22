@@ -24,15 +24,31 @@ import {
 } from 'lucide-react';
 import type { User } from '../lib/firebase';
 import { FormattedMathContent } from './FormattedMathContent';
+import { SubjectSelector } from './SubjectSelector';
 
 interface FlashcardsViewProps {
   firebaseUser?: User | null;
   onSignIn?: () => void;
+  selectedSubject?: SubjectType;
+  onSubjectChange?: (subject: SubjectType) => void;
 }
 
-export const FlashcardsView: React.FC<FlashcardsViewProps> = ({ firebaseUser, onSignIn }) => {
+export const FlashcardsView: React.FC<FlashcardsViewProps> = ({
+  firebaseUser,
+  onSignIn,
+  selectedSubject: propSelectedSubject,
+  onSubjectChange
+}) => {
   const [activeTab, setActiveTab] = useState<'cards' | 'vocab'>('cards');
-  const [selectedSubject, setSelectedSubject] = useState<SubjectType>('Biology');
+  const [selectedSubject, setSelectedSubject] = useState<SubjectType>(propSelectedSubject || 'Biology');
+
+  useEffect(() => {
+    if (propSelectedSubject && propSelectedSubject !== selectedSubject) {
+      setSelectedSubject(propSelectedSubject);
+      setCardIndex(0);
+      setIsFlipped(false);
+    }
+  }, [propSelectedSubject]);
   const [cardIndex, setCardIndex] = useState<number>(0);
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [vocabSearch, setVocabSearch] = useState<string>('');
@@ -315,6 +331,19 @@ export const FlashcardsView: React.FC<FlashcardsViewProps> = ({ firebaseUser, on
               </div>
 
               <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Subject Context *</label>
+                  <SubjectSelector
+                    variant="pills"
+                    value={selectedSubject}
+                    onChange={(s) => {
+                      setSelectedSubject(s);
+                      onSubjectChange?.(s);
+                    }}
+                    allowedSubjects={['Biology', 'Chemistry', 'Physics', 'English']}
+                  />
+                </div>
+
                 <div>
                   <label className="text-xs font-semibold text-slate-300">Topic</label>
                   <input

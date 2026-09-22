@@ -44,10 +44,13 @@ import { aiFetch, getAiFriendlyMessage, isAiRequestCancelled } from '../lib/aiRe
 import { useAiRequestAction } from '../lib/useAiRequestAction';
 import { AiActionStatus } from './AiActionStatus';
 import { FormattedMathContent } from './FormattedMathContent';
+import { SubjectSelector } from './SubjectSelector';
 
 interface ConceptNotesExplorerProps {
   firebaseUser?: User | null;
   onSignIn?: () => void;
+  selectedSubject?: SubjectType;
+  onSubjectChange?: (subject: SubjectType) => void;
 }
 
 const POPULAR_CUSTOM_TOPICS = [
@@ -63,7 +66,9 @@ const POPULAR_CUSTOM_TOPICS = [
 
 export const ConceptNotesExplorer: React.FC<ConceptNotesExplorerProps> = ({
   firebaseUser,
-  onSignIn
+  onSignIn,
+  selectedSubject,
+  onSubjectChange
 }) => {
   // Main Navigation Tabs
   const [mainTab, setMainTab] = useState<'custom_builder' | 'syllabus_explorer' | 'my_notes'>('custom_builder');
@@ -73,7 +78,13 @@ export const ConceptNotesExplorer: React.FC<ConceptNotesExplorerProps> = ({
   // ----------------------------------------------------
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [customTopic, setCustomTopic] = useState('');
-  const [customSubject, setCustomSubject] = useState<SubjectType>('Biology');
+  const [customSubject, setCustomSubject] = useState<SubjectType>(selectedSubject || 'Biology');
+
+  useEffect(() => {
+    if (selectedSubject && selectedSubject !== customSubject) {
+      setCustomSubject(selectedSubject);
+    }
+  }, [selectedSubject]);
   const [customChapter, setCustomChapter] = useState('');
   const [detailLevel, setDetailLevel] = useState<NoteDetailLevel>('STANDARD');
   const [noteType, setNoteType] = useState<NoteType>('STUDY NOTES');

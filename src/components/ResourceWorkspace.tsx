@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import UiCard from './UiCard';
 import { ConceptNotesExplorer } from './ConceptNotesExplorer';
 import { FlashcardsView } from './FlashcardsView';
 import { ReferenceLibraries } from './ReferenceLibraries';
 import { PrismWorkspace } from './prism/PrismWorkspace';
+import { SubjectSelector } from './SubjectSelector';
 import {
   FileText,
   Layers,
@@ -17,7 +18,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import type { User } from '../lib/firebase';
-import { SavedMistake, ExamAttempt } from '../types';
+import { SavedMistake, ExamAttempt, SubjectType } from '../types';
 
 export interface ResourceWorkspaceProps {
   activeSubTab: string;
@@ -38,6 +39,8 @@ export const ResourceWorkspace: React.FC<ResourceWorkspaceProps> = ({
   setSavedMistakes,
   setExamHistory
 }) => {
+  const [selectedSubject, setSelectedSubject] = useState<SubjectType>('Biology');
+
   return (
     <div className="space-y-6">
       <UiCard className="rounded-[32px] border-emerald-500/20 bg-gradient-to-br from-emerald-950/70 via-slate-900 to-slate-950 p-6 shadow-2xl shadow-emerald-950/30">
@@ -58,6 +61,15 @@ export const ResourceWorkspace: React.FC<ResourceWorkspaceProps> = ({
           </div>
         </div>
       </UiCard>
+
+      {/* Authoritative Global Subject Context Bar */}
+      <SubjectSelector
+        variant="bar"
+        value={selectedSubject}
+        onChange={setSelectedSubject}
+        label="Active Subject Context"
+        allowedSubjects={['Biology', 'Chemistry', 'Physics']}
+      />
 
       <div className="flex items-center gap-2 pb-2 border-b border-slate-800/80 overflow-x-auto no-scrollbar">
         {[
@@ -106,15 +118,27 @@ export const ResourceWorkspace: React.FC<ResourceWorkspaceProps> = ({
           savedMistakes={savedMistakes}
           setSavedMistakes={setSavedMistakes}
           setExamHistory={setExamHistory}
+          selectedSubject={selectedSubject}
+          onSubjectChange={setSelectedSubject}
         />
       )}
 
       {activeSubTab === 'notes' && (
-        <ConceptNotesExplorer firebaseUser={firebaseUser} onSignIn={onSignInGoogle} />
+        <ConceptNotesExplorer
+          firebaseUser={firebaseUser}
+          onSignIn={onSignInGoogle}
+          selectedSubject={selectedSubject}
+          onSubjectChange={setSelectedSubject}
+        />
       )}
 
       {activeSubTab === 'flashcards' && (
-        <FlashcardsView firebaseUser={firebaseUser} onSignIn={onSignInGoogle} />
+        <FlashcardsView
+          firebaseUser={firebaseUser}
+          onSignIn={onSignInGoogle}
+          selectedSubject={selectedSubject}
+          onSubjectChange={setSelectedSubject}
+        />
       )}
 
       {(activeSubTab === 'formula_lib' ||
@@ -124,7 +148,13 @@ export const ResourceWorkspace: React.FC<ResourceWorkspaceProps> = ({
         activeSubTab === 'mnemonics' ||
         activeSubTab === 'knowledge_graph' ||
         activeSubTab === 'vault') && (
-        <ReferenceLibraries firebaseUser={firebaseUser} onSignIn={onSignInGoogle} activeSubTab={activeSubTab} />
+        <ReferenceLibraries
+          firebaseUser={firebaseUser}
+          onSignIn={onSignInGoogle}
+          activeSubTab={activeSubTab}
+          selectedSubject={selectedSubject}
+          onSubjectChange={setSelectedSubject}
+        />
       )}
     </div>
   );
