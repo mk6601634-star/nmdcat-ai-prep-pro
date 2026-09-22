@@ -21,6 +21,61 @@ export type ExamRelevance =
   | 'BOTH_ACCEPTED'
   | 'UNRESOLVED';
 
+export type ClaimType = 
+  | 'STRUCTURAL'
+  | 'MECHANISTIC'
+  | 'HISTORICAL'
+  | 'QUANTITATIVE'
+  | 'SUPERLATIVE'
+  | 'EXCEPTION'
+  | 'OTHER';
+
+export type SuperlativeType = 
+  | 'FIRST'
+  | 'LAST'
+  | 'LARGEST'
+  | 'SMALLEST'
+  | 'LONGEST'
+  | 'SHORTEST'
+  | 'HIGHEST'
+  | 'LOWEST'
+  | 'MOST'
+  | 'LEAST'
+  | 'ONLY'
+  | 'UNIQUE'
+  | 'MAXIMUM'
+  | 'MINIMUM'
+  | 'FASTEST'
+  | 'SLOWEST'
+  | 'OLDEST'
+  | 'YOUNGEST'
+  | 'OTHER';
+
+export type HistoricalPriorityType = 
+  | 'FIRST_DISCOVERED'
+  | 'FIRST_DESCRIBED'
+  | 'FIRST_OBSERVED'
+  | 'FIRST_IDENTIFIED'
+  | 'FIRST_ISOLATED'
+  | 'FIRST_CRYSTALLIZED'
+  | 'FIRST_SYNTHESIZED'
+  | 'OTHER';
+
+export type VerificationLevel = 
+  | 'SOURCE_SUPPORTED'
+  | 'MULTI_SOURCE_SUPPORTED'
+  | 'CROSS_SOURCE_CONSISTENT'
+  | 'CONTEXT_AMBIGUOUS'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'CONFLICTING_EVIDENCE'
+  | 'UNVERIFIED_SUPERLATIVE';
+
+export type SemanticPreservationStatus = 
+  | 'VERIFIED_PRESERVED'
+  | 'POSSIBLE_DILUTION'
+  | 'SCOPE_AMBIGUOUS'
+  | 'FAILED';
+
 export interface PrismSource {
   id: string;
   sourceType: SourceType;
@@ -44,6 +99,14 @@ export interface PrismClaim {
   examRelevance: ExamRelevance;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   notes?: string;
+  // Phase 2: Structured Exception / Superlative Risk Metadata (Backward-Compatible)
+  claimType?: ClaimType;
+  superlativeType?: SuperlativeType;
+  historicalPriorityType?: HistoricalPriorityType;
+  verificationLevel?: VerificationLevel;
+  semanticPreservationStatus?: SemanticPreservationStatus;
+  detectedScope?: string;
+  isHighRiskSuperlative?: boolean;
 }
 
 export interface PrismRule {

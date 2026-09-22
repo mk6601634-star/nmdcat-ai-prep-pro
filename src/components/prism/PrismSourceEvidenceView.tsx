@@ -15,7 +15,8 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
-  Scale
+  Scale,
+  Compass
 } from 'lucide-react';
 
 interface PrismSourceEvidenceViewProps {
@@ -199,13 +200,30 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
                 >
                   <div className="space-y-1 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <PrismConflictBadge status={claim.status} examRelevance={claim.examRelevance} size="sm" />
+                      <PrismConflictBadge 
+                        status={claim.status} 
+                        examRelevance={claim.examRelevance} 
+                        verificationLevel={claim.verificationLevel}
+                        claimType={claim.claimType}
+                        superlativeType={claim.superlativeType}
+                        size="sm" 
+                      />
                       <span className="text-[10px] text-slate-400 font-semibold px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
                         {claim.category || 'General'}
                       </span>
-                      {claim.qualifier && (
+                      {claim.detectedScope && (
+                        <span className="text-[10px] font-bold text-teal-300 px-2 py-0.5 rounded bg-teal-500/10 border border-teal-500/30">
+                          Scope: {claim.detectedScope}
+                        </span>
+                      )}
+                      {claim.qualifier && !claim.detectedScope && (
                         <span className="text-[10px] font-bold text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
                           Qualifier: {claim.qualifier}
+                        </span>
+                      )}
+                      {claim.semanticPreservationStatus && claim.semanticPreservationStatus !== 'VERIFIED_PRESERVED' && (
+                        <span className="text-[10px] font-bold text-yellow-300 px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/30">
+                          Preservation: {claim.semanticPreservationStatus.replace('_', ' ')}
                         </span>
                       )}
                     </div>
@@ -282,4 +300,3 @@ export const PrismSourceEvidenceView: React.FC<PrismSourceEvidenceViewProps> = (
     </div>
   );
 };
-

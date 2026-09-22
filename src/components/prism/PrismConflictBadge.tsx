@@ -1,10 +1,13 @@
 import React from 'react';
-import { KnowledgeStatus, ExamRelevance } from './prismTypes';
-import { CheckCircle2, AlertTriangle, HelpCircle, BookOpen, AlertOctagon, XCircle, Info } from 'lucide-react';
+import { KnowledgeStatus, ExamRelevance, VerificationLevel, SuperlativeType, ClaimType } from './prismTypes';
+import { CheckCircle2, AlertTriangle, HelpCircle, BookOpen, AlertOctagon, XCircle, Info, Award, Compass } from 'lucide-react';
 
 interface PrismConflictBadgeProps {
   status: KnowledgeStatus;
   examRelevance?: ExamRelevance;
+  verificationLevel?: VerificationLevel;
+  claimType?: ClaimType;
+  superlativeType?: SuperlativeType;
   showIcon?: boolean;
   size?: 'sm' | 'md';
 }
@@ -12,6 +15,9 @@ interface PrismConflictBadgeProps {
 export const PrismConflictBadge: React.FC<PrismConflictBadgeProps> = ({
   status,
   examRelevance,
+  verificationLevel,
+  claimType,
+  superlativeType,
   showIcon = true,
   size = 'sm'
 }) => {
@@ -66,6 +72,26 @@ export const PrismConflictBadge: React.FC<PrismConflictBadgeProps> = ({
     }
   };
 
+  const getVerificationLevelConfig = (lvl: VerificationLevel) => {
+    switch (lvl) {
+      case 'CROSS_SOURCE_CONSISTENT':
+        return { label: 'Cross-Source Verified', classes: 'bg-teal-500/20 text-teal-300 border-teal-500/40' };
+      case 'MULTI_SOURCE_SUPPORTED':
+        return { label: 'Multi-Source Supported', classes: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' };
+      case 'SOURCE_SUPPORTED':
+        return { label: 'Source Supported', classes: 'bg-sky-500/20 text-sky-300 border-sky-500/40' };
+      case 'CONTEXT_AMBIGUOUS':
+        return { label: 'Context / Scope Ambiguous', classes: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' };
+      case 'CONFLICTING_EVIDENCE':
+        return { label: 'Conflicting Evidence', classes: 'bg-rose-500/20 text-rose-300 border-rose-500/40' };
+      case 'UNVERIFIED_SUPERLATIVE':
+        return { label: 'Unverified Superlative', classes: 'bg-red-500/20 text-red-300 border-red-500/40' };
+      case 'INSUFFICIENT_EVIDENCE':
+      default:
+        return { label: 'Unverified', classes: 'bg-slate-800 text-slate-400 border-slate-700' };
+    }
+  };
+
   const config = getStatusConfig();
   const Icon = config.icon;
 
@@ -75,6 +101,20 @@ export const PrismConflictBadge: React.FC<PrismConflictBadgeProps> = ({
         {showIcon && <Icon className={iconSize} />}
         <span>{config.label}</span>
       </span>
+
+      {verificationLevel && verificationLevel !== 'SOURCE_SUPPORTED' && (
+        <span className={`inline-flex items-center gap-1 font-bold rounded-md border tracking-wide uppercase ${sizeClasses} ${getVerificationLevelConfig(verificationLevel).classes}`}>
+          {showIcon && <Award className={iconSize} />}
+          <span>{getVerificationLevelConfig(verificationLevel).label}</span>
+        </span>
+      )}
+
+      {claimType && (claimType === 'SUPERLATIVE' || claimType === 'HISTORICAL' || claimType === 'EXCEPTION') && (
+        <span className={`inline-flex items-center gap-1 font-bold rounded-md border tracking-wide uppercase ${sizeClasses} bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40`}>
+          {showIcon && <Compass className={iconSize} />}
+          <span>{claimType}{superlativeType ? `: ${superlativeType}` : ''}</span>
+        </span>
+      )}
 
       {examRelevance && status === 'TEXTBOOK_SCIENCE_CONFLICT' && (
         <span className={`inline-flex items-center gap-1 font-bold rounded-md border tracking-wide uppercase ${sizeClasses} ${

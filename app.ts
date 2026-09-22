@@ -8,6 +8,7 @@ import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter
 import { activeConfig, MODEL_REGISTRY, usageMetrics } from "./server/aiModelRegistry.ts";
 import { providersMap } from "./server/aiProviders.ts";
 import type { AIProviderId, AIMode } from "./server/aiTypes.ts";
+import { validateAndEnrichPrismClaim } from "./src/components/prism/prismSuperlativeValidator.ts";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -2208,7 +2209,8 @@ CORE LAW:
 "AI may synthesize verified knowledge, but must never silently invent, alter, or replace knowledge."
 - If the textbook states X and scientific consensus states Y, YOU MUST PRESERVE BOTH. Mark status as "TEXTBOOK_SCIENCE_CONFLICT".
 - Never guess exam relevance. If unclear, mark "UNRESOLVED".
-- Preserve all qualifiers (e.g. "first discovered", "first isolated", "under standard conditions", "mainly", "most abundant").
+- Preserve all qualifiers (e.g. "first discovered", "first isolated", "first crystallized", "under standard conditions", "mainly", "most abundant", "largest", "only", "unique", "exception").
+- Do NOT dilute superlative or historical milestone wording (e.g. never downgrade 'largest' to 'large' or 'first isolated' to 'early'). Always retain the explicit context/scope (e.g. 'in the human body', 'in eukaryotes').
 - If evidence is weak or missing, mark "INSUFFICIENT_EVIDENCE" or "DISPUTED".
 
 INPUT SPECIFICATIONS:
@@ -2366,13 +2368,18 @@ Do not include any text outside the JSON object. Do not include markdown formatt
       throw new Error("PRISM output missing required knowledgeLayer or materials structure.");
     }
 
+    const rawCorpus = [textbookContent, examReferences, externalSnippets].filter(Boolean).join("\n");
+    const rawSources = Array.isArray(parsed.knowledgeLayer.sources) ? parsed.knowledgeLayer.sources : [];
+    const rawClaims = Array.isArray(parsed.knowledgeLayer.claims) ? parsed.knowledgeLayer.claims : [];
+    const validatedClaims = rawClaims.map((c: any) => validateAndEnrichPrismClaim(c, rawSources, rawCorpus));
+
     // Sanitize and ensure array validity
     const knowledgeLayer = {
       topic: parsed.knowledgeLayer.topic || topic,
       subject: parsed.knowledgeLayer.subject || subject,
       verifiedSummary: parsed.knowledgeLayer.verifiedSummary || '',
-      sources: Array.isArray(parsed.knowledgeLayer.sources) ? parsed.knowledgeLayer.sources : [],
-      claims: Array.isArray(parsed.knowledgeLayer.claims) ? parsed.knowledgeLayer.claims : [],
+      sources: rawSources,
+      claims: validatedClaims,
       rules: Array.isArray(parsed.knowledgeLayer.rules) ? parsed.knowledgeLayer.rules : [],
       textbookConflicts: Array.isArray(parsed.knowledgeLayer.textbookConflicts) ? parsed.knowledgeLayer.textbookConflicts : [],
       disputes: Array.isArray(parsed.knowledgeLayer.disputes) ? parsed.knowledgeLayer.disputes : [],
