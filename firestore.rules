@@ -134,6 +134,13 @@ service cloud.firestore {
       allow delete: if isUserDelete();
     }
 
+    match /aiConversations/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
     match /userPrismSessions/{docId} {
       allow create: if isUserCreate();
       allow read: if isUserRead();

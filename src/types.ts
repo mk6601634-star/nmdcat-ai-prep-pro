@@ -540,3 +540,37 @@ export interface ImportJob {
   createdBy?: string;
 }
 
+export type AiTeachingMode = 'standard' | 'socratic' | 'stepByStep' | 'analogy' | 'teachUntilUnderstand';
+
+export interface AiChatMessage {
+  id: string;
+  sender: 'user' | 'ai';
+  text: string;
+  time: string;
+  timestamp: number;
+  modeUsed?: AiTeachingMode;
+  error?: boolean;
+}
+
+export interface AiMasteryState {
+  currentStage: number;
+  totalStages: number;
+  currentConcept?: string;
+  masteredConcepts: string[];
+  weakConcepts: string[];
+  lastVerificationResult?: 'correct' | 'incorrect' | 'partial';
+  isMastered?: boolean;
+}
+
+export interface AiConversation {
+  id: string;
+  userId: string;
+  title: string;
+  subject: SubjectType;
+  mode: AiTeachingMode;
+  messages: AiChatMessage[];
+  masteryState?: AiMasteryState;
+  createdAt: string;
+  updatedAt: string;
+}
+

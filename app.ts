@@ -653,45 +653,130 @@ const handleAiError = (res: any, error: any, defaultMessage: string) => {
   });
 };
 
-// API Endpoint 1: Ask AI Medical Tutor with Multi-mode support
+// API Endpoint 1: Ask AI Medical Tutor with Multi-mode & Full Conversation Memory support
 const aiChatHandler = async (req: any, res: any) => {
   try {
-    const { question, subject, context, mode = "standard" } = req.body;
-    if (!question) {
-      return res.status(400).json({ error: "Question parameter is required" });
+    const {
+      question,
+      subject = "Biology",
+      context = "",
+      mode = "standard",
+      messages = [],
+      masteryState = null
+    } = req.body;
+
+    const queryText = question || (messages.length > 0 ? messages[messages.length - 1]?.text || messages[messages.length - 1]?.content : "");
+    if (!queryText) {
+      return res.status(400).json({ error: "Question or message text is required" });
     }
 
-    let modeInstruction = "Provide a clear, high-yield, step-by-step explanation suitable for an FSc/NMDCAT student.";
-    if (mode === "socratic") {
-      modeInstruction = "DO NOT give the final answer directly. Ask 2-3 guiding, thought-provoking questions to lead the student to deduce the correct PMDC concept themselves.";
-    } else if (mode === "analogy") {
-      modeInstruction = "Explain using vivid, real-life analogies and medical scenarios to make this complex concept intuitive and memorable.";
-    } else if (mode === "numerical") {
-      modeInstruction = "Provide a step-by-step mathematical derivation/solution. Clearly list Given Data, Formula Used, Step-by-step Calculation, Final Units & Dimensions, and Common Calculation Traps.";
-    } else if (mode === "teach_until_understand") {
-      modeInstruction = "Provide a progressive teaching breakdown: 1) Simplified Core Concept, 2) Visual Mental Model, 3) Check Question for the student to answer, 4) Summary rule.";
+    // Normalize teaching mode
+    const normMode = String(mode).toLowerCase().replace(/[^a-z]/g, '');
+    let modeTitle = "Standard Direct Instruction";
+    let modeInstruction = "";
+
+    if (normMode.includes('socratic')) {
+      modeTitle = "Socratic Guided Discovery";
+      modeInstruction = `You are in SOCRATIC GUIDANCE MODE.
+- DO NOT provide the complete direct answer immediately.
+- Guide the student through targeted, sequential reasoning questions (1 to 2 questions at a time) to lead them to deduce the scientific concept themselves.
+- Acknowledge any correct reasoning from their previous messages in the chat history.
+- If they have a misconception, point out a focused clue or paradox rather than simply telling them the answer.
+- Only provide the full explanation if the student has successfully reasoned it out or explicitly states they are stuck after multiple attempts.`;
+    } else if (normMode.includes('step') || normMode.includes('numerical')) {
+      modeTitle = "Step-by-Step Sequential Teaching";
+      modeInstruction = `You are in STEP-BY-STEP SEQUENTIAL MODE.
+- Break down the explanation or problem into clear, numbered logical steps (Step 1, Step 2, Step 3...).
+- For conceptual topics: 1) Core Definition, 2) Biological/Physical Mechanism, 3) Important Exceptions/Factors, 4) Summary Rule.
+- For calculations/numerical problems:
+  * Given Data & Unknowns
+  * Formula (in LaTeX: $...$ or $$...$$)
+  * Step-by-Step Substitution
+  * Calculation & Simplification
+  * Final Answer with Units & Dimensions
+  * Common Examination Traps`;
+    } else if (normMode.includes('analogy')) {
+      modeTitle = "Analogy-Based Conceptual Model";
+      modeInstruction = `You are in ANALOGY-BASED CONCEPTUAL MODE.
+- Explain the requested concept using a vivid, memorable, real-world or clinical analogy.
+- Provide an explicit mapping breakdown showing how each part of the analogy directly corresponds to the scientific mechanism (e.g. Analogy Element <-> Biological/Physical Structure).
+- Clearly explain the LIMITATIONS of the analogy (where the analogy stops being accurate).
+- Conclude with the formal PMDC syllabus terminology so the student understands both the intuitive mental model and the exact textbook terms.`;
+    } else if (normMode.includes('master') || normMode.includes('understand')) {
+      modeTitle = "Teach Until Mastery Diagnostic Mode";
+      modeInstruction = `You are in TEACH UNTIL MASTERY MODE.
+- Act as an interactive personal medical tutor testing and confirming understanding.
+- Briefly explain the specific targeted concept in 2-3 concise paragraphs.
+- Then, IMMEDIATELY provide ONE single diagnostic check question (MDCAT level Multiple Choice with options A, B, C, D) for the student to solve right now.
+- If the student previously answered your check question in the chat history, evaluate their answer:
+  * If Correct: Praise their mastery of this stage, state the next key concept, and ask a slightly harder question.
+  * If Incorrect: Explain the exact misconception in their chosen option, clarify the point, and give an alternate check question.`;
+    } else {
+      modeTitle = "Standard High-Yield Direct Instruction";
+      modeInstruction = `You are in STANDARD HIGH-YIELD MODE.
+- Provide a direct, comprehensive, academic answer strictly aligned with the PMDC / FSc syllabus for ${subject}.
+- Explain the core concept clearly with high scientific accuracy.
+- Do NOT force questions back to the student or withhold information.
+- Provide relevant examples and exam-tested distinctions.`;
     }
 
-    const prompt = `You are an expert NMDCAT (National Medical and Dental College Admission Test) AI Tutor in Pakistan, specializing in Biology, Chemistry, Physics, English, and Logical Reasoning based on the PMDC syllabus.
-    
-    Subject Context: ${subject || "General NMDCAT"}
-    Additional Context: ${context || "None"}
-    Teaching Mode: ${mode}
-    Instruction Strategy: ${modeInstruction}
+    // Build Chronological Conversation Memory
+    let conversationHistoryText = "";
+    if (Array.isArray(messages) && messages.length > 0) {
+      // Exclude the current query if it's already the last item in messages to avoid duplication
+      const historyList = messages.slice(0, messages.length - (messages[messages.length - 1]?.text === queryText ? 1 : 0)).slice(-10);
+      if (historyList.length > 0) {
+        conversationHistoryText = "--- PRIOR CONVERSATION HISTORY (Context from previous turns) ---\n" +
+          historyList.map((m: any, idx: number) => {
+            const role = (m.sender === 'user' || m.role === 'user') ? 'Student' : 'AI Tutor';
+            const text = m.text || m.content || '';
+            return `[Turn ${idx + 1}] ${role}: ${text}`;
+          }).join('\n\n') +
+          "\n--- END OF PRIOR CONVERSATION HISTORY ---\n";
+      }
+    }
 
-    Student's Query: "${question}"
+    const prompt = `You are an expert NMDCAT (National Medical and Dental College Admission Test) AI Medical Tutor in Pakistan.
+You specialize in teaching Biology, Chemistry, Physics, English, and Logical Reasoning aligned with the official PMDC / FSc syllabus.
 
-    Format response neatly with Markdown, bold high-yield terms, and add NMDCAT exam tips.`;
+CURRENT SUBJECT: ${subject}
+TEACHING STRATEGY: ${modeTitle}
+${modeInstruction}
+
+${conversationHistoryText ? conversationHistoryText : ""}
+${context ? `ADDITIONAL STUDENT CONTEXT: ${context}\n` : ""}
+
+STUDENT'S CURRENT QUERY: "${queryText}"
+
+CRITICAL FORMATTING & TYPESETTING RULES:
+1. Mathematical & Chemical Formatting:
+   - Always format math formulas, equations, physics quantities, and chemical formulas in clean LaTeX notation.
+   - Use inline math $...$ (e.g. $H_2O$, $Ca^{2+}$, $SO_4^{2-}$, $v = \\frac{V_{max}[S]}{K_m + [S]}$, $s = ut + \\frac{1}{2}at^2$, $E = mc^2$, $10^{-6}\\text{ M}$).
+   - Use display math $$...$$ on its own line for major equations and derivations.
+2. Clean Markdown:
+   - Maximum 2 heading levels (use ## and ### only when needed).
+   - Do NOT use decorative separator lines (no "---").
+   - Do NOT bold ordinary words repeatedly. Bold only critical terminology on first mention.
+   - Use clean bullet points (- ) or numbered lists (1. ) for sequential points.
+   - Use tables only when comparing distinct structures or processes.
+   - Do NOT add filler motivational greetings or repetitive boilerplate.
+   - Remain strictly at NMDCAT / FSc preparation depth.`;
 
     const result = await callWithFallback({
       prompt,
-      temperature: 0.7,
+      temperature: normMode.includes('socratic') ? 0.6 : 0.7,
       maxTokens: 4096,
     });
 
-    res.json({ text: result.text, answer: result.text, provider: result.provider });
+    res.json({
+      success: true,
+      text: result.text,
+      answer: result.text,
+      provider: result.provider,
+      modeUsed: mode
+    });
   } catch (error: any) {
-    return handleAiError(res, error, "Failed to generate AI response. Please check API key or retry.");
+    return handleAiError(res, error, "Failed to generate AI Tutor response.");
   }
 };
 

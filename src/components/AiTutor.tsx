@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Sparkles, 
   Send, 
@@ -18,25 +18,37 @@ import {
   Image,
   FileQuestion,
   HelpCircle,
-  GraduationCap
+  GraduationCap,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ArrowDown,
+  RotateCcw,
+  BookOpen,
+  Target,
+  Layers,
+  History,
+  AlertCircle
 } from 'lucide-react';
-import { SubjectType, SavedMistake, SyllabusTopic, ExamAttempt } from '../types';
+import { SubjectType, SavedMistake, SyllabusTopic, ExamAttempt, AiTeachingMode, AiChatMessage, AiConversation, AiMasteryState } from '../types';
 import { aiFetch, getAiFriendlyMessage, isAiRequestCancelled } from '../lib/aiRequest';
 import { useAiRequestAction } from '../lib/useAiRequestAction';
 import { AiActionStatus } from './AiActionStatus';
-
-interface Message {
-  sender: 'user' | 'ai';
-  text: string;
-  time: string;
-  modeUsed?: string;
-}
+import { FormattedMathContent } from './FormattedMathContent';
+import { 
+  saveAiConversation, 
+  subscribeToAiConversations, 
+  deleteAiConversation 
+} from '../lib/firestoreService';
+import { auth } from '../lib/firebase';
 
 interface AiTutorProps {
   savedMistakes?: SavedMistake[];
   topics?: SyllabusTopic[];
   examHistory?: ExamAttempt[];
 }
+
+const DEFAULT_GREETING = "Hello future doctor! I am your AI NMDCAT Medical Tutor. Ask any question in Biology, Chemistry, Physics, English, or Logical Reasoning. Select your preferred teaching mode (Standard, Socratic, Step-by-Step, Analogy, or Teach Until Mastery) to guide our lesson.";
 
 export const AiTutor: React.FC<AiTutorProps> = ({
   savedMistakes = [],
@@ -45,23 +57,45 @@ export const AiTutor: React.FC<AiTutorProps> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'chat' | 'imageDoubt' | 'mnemonic'>('chat');
   const [subject, setSubject] = useState<SubjectType>('Biology');
-  const [teachingMode, setTeachingMode] = useState<'standard' | 'socratic' | 'stepByStep' | 'analogy' | 'teachUntilUnderstand'>('standard');
+  const [teachingMode, setTeachingMode] = useState<AiTeachingMode>('standard');
   const [userInput, setUserInput] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
+  
+  // Conversations State
+  const [conversations, setConversations] = useState<AiConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string>(() => {
+    return `conv_${Date.now()}`;
+  });
+
+  const [messages, setMessages] = useState<AiChatMessage[]>([
+    {
+      id: `msg_init_${Date.now()}`,
+      sender: 'ai',
+      text: DEFAULT_GREETING,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now()
+    }
+  ]);
+
+  const [masteryState, setMasteryState] = useState<AiMasteryState>({
+    currentStage: 1,
+    totalStages: 5,
+    masteredConcepts: [],
+    weakConcepts: []
+  });
+
+  // Scroll State
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+
+  // Actions
   const chatAction = useAiRequestAction();
   const imageAction = useAiRequestAction();
   const mnemonicAction = useAiRequestAction();
 
-  // Messages State
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      sender: 'ai',
-      text: "Hello future doctor! I am your AI NMDCAT Tutor powered by Gemini 3.6 Flash. Select a teaching mode (Socratic, Step-by-Step, Analogy, or Teach-Until-I-Understand) or ask any question!",
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-  ]);
-
-  // Image / Handwritten Doubt State
+  // Image Doubt State
   const [imageSample, setImageSample] = useState<string>('');
   const [imagePrompt, setImagePrompt] = useState<string>('Explain this reaction mechanism and identify any missing steps');
 
@@ -70,21 +104,119 @@ export const AiTutor: React.FC<AiTutorProps> = ({
   const [mnemonicResult, setMnemonicResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const quickPrompts = [
-    { subject: 'Biology', label: 'Explain Krebs Cycle & ATP yield' },
-    { subject: 'Chemistry', label: 'Lucas Test vs Tollen Test mechanism' },
-    { subject: 'Physics', label: 'Shortcuts for Projectile Motion formulas' },
-    { subject: 'English', label: 'Subject-Verb agreement rules with Neither/Nor' },
-    { subject: 'Logical Reasoning', label: 'How to solve Syllogisms accurately' }
-  ];
+  // Current User ID
+  const currentUserId = auth.currentUser?.uid || 'anonymous_user';
 
+  // 1. Subscribe to Saved Conversations in Firestore & LocalStorage
+  useEffect(() => {
+    // Load cached conversations from localStorage first
+    try {
+      const cached = localStorage.getItem(`nmdcat_conversations_${currentUserId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setConversations(parsed);
+        }
+      }
+    } catch {}
+
+    // Live subscription to Firestore
+    if (auth.currentUser?.uid) {
+      const unsubscribe = subscribeToAiConversations(auth.currentUser.uid, (items) => {
+        if (items && items.length > 0) {
+          setConversations(items);
+          try {
+            localStorage.setItem(`nmdcat_conversations_${auth.currentUser?.uid}`, JSON.stringify(items));
+          } catch {}
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [currentUserId]);
+
+  // 2. Scroll listener to show/hide "Scroll to Bottom" button
+  const handleScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distanceToBottom < 80;
+    setShowScrollBottom(distanceToBottom > 150);
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior
+      });
+      setShowScrollBottom(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isNearBottomRef.current) {
+      scrollToBottom('smooth');
+    }
+  }, [messages, chatAction.isLoading]);
+
+  // 3. Start a New Conversation
+  const handleNewConversation = () => {
+    const newId = `conv_${Date.now()}`;
+    const initialMsg: AiChatMessage = {
+      id: `msg_${Date.now()}`,
+      sender: 'ai',
+      text: DEFAULT_GREETING,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now()
+    };
+    setActiveConversationId(newId);
+    setMessages([initialMsg]);
+    setMasteryState({
+      currentStage: 1,
+      totalStages: 5,
+      masteredConcepts: [],
+      weakConcepts: []
+    });
+    setShowHistoryDrawer(false);
+  };
+
+  // 4. Switch to an Existing Conversation
+  const handleSelectConversation = (conv: AiConversation) => {
+    setActiveConversationId(conv.id);
+    setSubject(conv.subject || 'Biology');
+    setTeachingMode(conv.mode || 'standard');
+    setMessages(conv.messages || []);
+    if (conv.masteryState) {
+      setMasteryState(conv.masteryState);
+    }
+    setShowHistoryDrawer(false);
+  };
+
+  // 5. Delete a Conversation
+  const handleDeleteConversation = async (e: React.MouseEvent, convId: string) => {
+    e.stopPropagation();
+    if (auth.currentUser?.uid) {
+      await deleteAiConversation(convId);
+    }
+    setConversations(prev => prev.filter(c => c.id !== convId));
+    if (activeConversationId === convId) {
+      handleNewConversation();
+    }
+  };
+
+  // 6. Speech Synthesis
   const handleSpeech = (text: string) => {
     if ('speechSynthesis' in window) {
       if (isSpeaking) {
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
       } else {
-        const utterance = new SpeechSynthesisUtterance(text);
+        // Strip markdown and KaTeX tokens for clean speech
+        const cleanSpeech = text
+          .replace(/\$+/g, '')
+          .replace(/[#*`_]/g, '')
+          .replace(/<[^>]*>/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanSpeech);
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
         utterance.onend = () => setIsSpeaking(false);
@@ -95,64 +227,106 @@ export const AiTutor: React.FC<AiTutorProps> = ({
     }
   };
 
+  // 7. Send Chat Message with Full Conversation Context Memory
   const handleSendMessage = async (queryText?: string) => {
-    const textToSend = queryText || userInput;
-    if (!textToSend.trim() || chatAction.isLoading) return;
+    const textToSend = (queryText || userInput).trim();
+    if (!textToSend || chatAction.isLoading) return;
 
-    const userMsg: Message = {
+    const userMsg: AiChatMessage = {
+      id: `msg_user_${Date.now()}`,
       sender: 'user',
       text: textToSend,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now()
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     if (!queryText) setUserInput('');
 
-    const contextSummary = `Student Database Stats: ${topics.filter(t => t.status === 'revised').length}/${topics.length} topics completed; ${savedMistakes.filter(m => !m.isResolved).length} unresolved mistakes; ${examHistory.length} mock tests taken.`;
+    // Prepare Context Summary
+    const contextSummary = `PMDC NMDCAT Syllabus Context. Student Stats: ${topics.filter(t => t.status === 'revised').length}/${topics.length || 1} topics revised; ${savedMistakes.filter(m => !m.isResolved).length} open mistakes in vault; ${examHistory.length} mock tests taken.`;
 
     try {
       const data = await chatAction.runRequest(
         async (signal) =>
-          await aiFetch<{ text: string }>('/api/ai-tutor', {
+          await aiFetch<{ text: string; answer?: string; modeUsed?: string }>('/api/ai-tutor', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               question: textToSend,
               subject,
               mode: teachingMode,
-              context: contextSummary
+              context: contextSummary,
+              messages: updatedMessages.map(m => ({
+                sender: m.sender,
+                text: m.text
+              })),
+              masteryState
             })
           }, { signal }),
         {
-          pending: 'AI Tutor is analyzing your question...',
+          pending: 'AI Tutor is analyzing your question and context...',
           success: 'AI Tutor response received.',
           cancelled: 'AI Tutor request cancelled.',
-          failure: 'AI Tutor failed to answer. Please try again.'
+          failure: 'AI Tutor failed to respond. Please retry.'
         }
       );
 
-      const aiMsg: Message = {
+      const aiReplyText = data.text || data.answer || 'I could not generate an answer for that query. Please try asking again.';
+
+      const aiMsg: AiChatMessage = {
+        id: `msg_ai_${Date.now()}`,
         sender: 'ai',
-        text: data.text || 'I apologize, I could not process that query. Please try asking again!',
+        text: aiReplyText,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now(),
         modeUsed: teachingMode
       };
 
-      setMessages(prev => [...prev, aiMsg]);
+      const finalMessages = [...updatedMessages, aiMsg];
+      setMessages(finalMessages);
+
+      // Auto-save conversation to Firestore and localStorage
+      const conversationTitle = updatedMessages.find(m => m.sender === 'user')?.text.slice(0, 38) + '...' || `${subject} Lesson`;
+      const currentConv: AiConversation = {
+        id: activeConversationId,
+        userId: auth.currentUser?.uid || 'anonymous_user',
+        title: conversationTitle,
+        subject,
+        mode: teachingMode,
+        messages: finalMessages,
+        masteryState,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Save to localStorage immediately
+      try {
+        const existing = [...conversations.filter(c => c.id !== activeConversationId), currentConv];
+        setConversations(existing);
+        localStorage.setItem(`nmdcat_conversations_${currentUserId}`, JSON.stringify(existing));
+      } catch {}
+
+      // Save to Firestore
+      if (auth.currentUser?.uid) {
+        saveAiConversation(auth.currentUser.uid, currentConv);
+      }
     } catch (error) {
       if (isAiRequestCancelled(error)) return;
-      setMessages(prev => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: chatAction.errorMessage || 'AI Tutor could not respond.',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-      if (import.meta.env.DEV) console.error('AI Tutor request failed:', error);
+      const errorMsg: AiChatMessage = {
+        id: `msg_err_${Date.now()}`,
+        sender: 'ai',
+        text: chatAction.errorMessage || 'AI Tutor could not respond due to a network error. Please click retry below.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now(),
+        error: true
+      };
+      setMessages(prev => [...prev, errorMsg]);
     }
   };
 
+  // Image Doubt Solver Handler
   const handleSolveImageDoubt = async () => {
     if (!imagePrompt.trim() || imageAction.isLoading) return;
 
@@ -169,17 +343,20 @@ export const AiTutor: React.FC<AiTutorProps> = ({
             })
           }, { signal }),
         {
-          pending: 'Analyzing image and handwritten doubt...',
-          success: 'Image doubt analysis complete.',
-          cancelled: 'Image doubt analysis cancelled.',
+          pending: 'Analyzing diagram / handwritten notes...',
+          success: 'Image analysis complete.',
+          cancelled: 'Image analysis cancelled.',
           failure: 'Image doubt analysis failed. Please retry.'
         }
       );
 
-      const aiMsg: Message = {
+      const aiMsg: AiChatMessage = {
+        id: `msg_img_${Date.now()}`,
         sender: 'ai',
-        text: `📷 **Image/Handwritten Doubt Solution:**\n\n${data.analysis || data.text || 'No analysis returned.'}`,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        text: `### Diagram / Notes Solution:\n\n${data.analysis || data.text || 'No analysis returned.'}`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now(),
+        modeUsed: 'stepByStep'
       };
 
       setMessages(prev => [...prev, aiMsg]);
@@ -189,15 +366,18 @@ export const AiTutor: React.FC<AiTutorProps> = ({
       setMessages(prev => [
         ...prev,
         {
+          id: `msg_err_${Date.now()}`,
           sender: 'ai',
           text: imageAction.errorMessage || 'AI image doubt analysis failed.',
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: Date.now(),
+          error: true
         }
       ]);
-      if (import.meta.env.DEV) console.error('Image doubt request failed:', error);
     }
   };
 
+  // Mnemonic Generator Handler
   const handleGenerateMnemonic = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mnemonicTopic.trim() || mnemonicAction.isLoading) return;
@@ -227,7 +407,6 @@ export const AiTutor: React.FC<AiTutorProps> = ({
     } catch (error) {
       if (isAiRequestCancelled(error)) return;
       setMnemonicResult(mnemonicAction.errorMessage || 'AI mnemonic generation failed.');
-      if (import.meta.env.DEV) console.error('Mnemonic request failed:', error);
     }
   };
 
@@ -237,6 +416,39 @@ export const AiTutor: React.FC<AiTutorProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Mode Details
+  const modeMetadata: Record<AiTeachingMode, { title: string; desc: string; badge: string; color: string }> = {
+    standard: {
+      title: 'Standard Direct',
+      desc: 'Direct, clear academic explanations aligned with PMDC syllabus.',
+      badge: 'Academic',
+      color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+    },
+    socratic: {
+      title: 'Socratic Discovery',
+      desc: 'Guides you with targeted questions to deduce concepts yourself.',
+      badge: 'Interactive',
+      color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+    },
+    stepByStep: {
+      title: 'Step-by-Step Logic',
+      desc: 'Explicit numbered steps, formula substitutions, and units.',
+      badge: 'Derivations',
+      color: 'bg-teal-500/20 text-teal-300 border-teal-500/30'
+    },
+    analogy: {
+      title: 'Analogy Model',
+      desc: 'Relatable real-world analogies with clear biological mappings.',
+      badge: 'Intuitive',
+      color: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+    },
+    teachUntilUnderstand: {
+      title: 'Teach Until Mastery',
+      desc: 'Interactive diagnostic questions until mastery criteria are met.',
+      badge: 'Mastery Loop',
+      color: 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -244,14 +456,17 @@ export const AiTutor: React.FC<AiTutorProps> = ({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 overflow-hidden rounded-[28px] border border-indigo-500/20 bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-950 p-6 shadow-[0_24px_80px_-32px_rgba(99,102,241,0.35)]">
         <div>
           <div className="mb-2 flex items-center gap-2 text-indigo-300 text-[11px] font-semibold uppercase tracking-[0.25em]">
-            <Sparkles className="w-4 h-4" />
-            <span>Server-Side Gemini 3.6 Flash Powered</span>
+            <Sparkles className="w-4 h-4 text-emerald-400" />
+            <span>PMDC AI Medical Tutor • Groq & KaTeX Powered</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-            AI Multi-Mode Tutor & Image Doubt Solver
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <span>AI Multi-Mode Tutor & Doubt Solver</span>
+            <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-mono">
+              Memory Active
+            </span>
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-300">
-            Socratic questioning, step-by-step problem solving, handwritten notes OCR, and spoken voice answers.
+            Real conversation memory, professional mathematical & chemical typesetting, and 5 distinct teaching strategies.
           </p>
         </div>
 
@@ -263,7 +478,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
               activeSubTab === 'chat' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            AI Tutor
+            AI Chat Tutor
           </button>
           <button
             onClick={() => setActiveSubTab('imageDoubt')}
@@ -284,126 +499,272 @@ export const AiTutor: React.FC<AiTutorProps> = ({
         </div>
       </div>
 
-      {/* Sub-tab 1: Interactive Chat */}
+      {/* Sub-tab 1: Interactive Chat with Memory & History */}
       {activeSubTab === 'chat' && (
-        <div className="flex h-[620px] flex-col overflow-hidden rounded-[24px] border border-slate-800/80 bg-slate-900/80 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.95)]">
-          {/* Controls Bar: Subject & Teaching Mode */}
-          <div className="p-3 bg-slate-800/80 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Subject:</span>
-              {(['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'] as SubjectType[]).map(sub => (
-                <button
-                  key={sub}
-                  onClick={() => setSubject(sub)}
-                  className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-colors whitespace-nowrap ${
-                    subject === sub ? 'bg-indigo-500 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {sub}
-                </button>
-              ))}
-            </div>
-
-            {/* Teaching Mode Pills */}
-            <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto">
-              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Mode:</span>
-              {[
-                { id: 'standard', label: 'Standard' },
-                { id: 'socratic', label: 'Socratic' },
-                { id: 'stepByStep', label: 'Step-by-Step' },
-                { id: 'analogy', label: 'Analogy' },
-                { id: 'teachUntilUnderstand', label: 'Teach Until Mastery' }
-              ].map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setTeachingMode(m.id as any)}
-                  className={`text-[10px] px-2 py-0.5 rounded font-semibold transition-colors whitespace-nowrap ${
-                    teachingMode === m.id
-                      ? 'bg-emerald-500 text-slate-950 font-bold'
-                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-700'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Messages Window */}
-          <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4">
-            {messages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`flex gap-3 max-w-2xl ${msg.sender === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
-              >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                  msg.sender === 'user' ? 'bg-emerald-500 text-slate-950' : 'bg-indigo-600 text-white'
-                }`}>
-                  {msg.sender === 'user' ? 'You' : <Sparkles className="w-4 h-4" />}
-                </div>
-
-                <div className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed ${
-                  msg.sender === 'user'
-                    ? 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/30 rounded-tr-none'
-                    : 'bg-slate-800/90 text-slate-200 border border-slate-700/80 rounded-tl-none space-y-2'
-                }`}>
-                  {msg.modeUsed && msg.sender === 'ai' && (
-                    <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 uppercase block w-fit mb-1">
-                      Mode: {msg.modeUsed}
-                    </span>
-                  )}
-                  <div className="whitespace-pre-wrap">{msg.text}</div>
-                  
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-1 border-t border-slate-800">
-                    <span>{msg.time}</span>
-                    {msg.sender === 'ai' && (
-                      <button
-                        onClick={() => handleSpeech(msg.text)}
-                        className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-bold"
-                      >
-                        {isSpeaking ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                        <span>{isSpeaking ? 'Stop Voice' : 'Read Out Loud'}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Sidebar: Conversation History (Desktop + Toggleable Drawer) */}
+          <div className={`${showHistoryDrawer ? 'fixed inset-0 z-50 bg-slate-950/80 p-4 flex flex-col justify-end' : 'hidden lg:flex lg:flex-col'} lg:static lg:z-auto bg-slate-900/90 rounded-[24px] border border-slate-800 p-4 space-y-4 shadow-xl h-auto lg:h-[680px]`}>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-white">
+                <History className="w-4 h-4 text-emerald-400" />
+                <span>Chat History ({conversations.length})</span>
               </div>
-            ))}
+              <button
+                onClick={handleNewConversation}
+                className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-lg flex items-center gap-1 transition-all shadow-md"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>New Chat</span>
+              </button>
+            </div>
 
-            <AiActionStatus
-            statusMessage={chatAction.statusMessage}
-            errorMessage={chatAction.errorMessage}
-            isLoading={chatAction.isLoading}
-          />
+            <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar max-h-[400px] lg:max-h-none">
+              {conversations.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 text-xs italic">
+                  No saved conversations yet. Start asking questions!
+                </div>
+              ) : (
+                conversations.map((conv) => {
+                  const isActive = conv.id === activeConversationId;
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => handleSelectConversation(conv)}
+                      className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between group ${
+                        isActive
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200 shadow-sm'
+                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <div className="truncate">
+                          <p className="text-xs font-semibold truncate text-white">{conv.title || 'Lesson'}</p>
+                          <span className="text-[10px] text-slate-500">{conv.subject} • {conv.mode}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={(e) => handleDeleteConversation(e, conv.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-500 transition-opacity"
+                        title="Delete conversation"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {showHistoryDrawer && (
+              <button
+                onClick={() => setShowHistoryDrawer(false)}
+                className="w-full py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold lg:hidden"
+              >
+                Close History
+              </button>
+            )}
           </div>
 
-          {/* Input Form */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="p-4 bg-slate-800/80 border-t border-slate-800 flex gap-2"
-          >
-            <label htmlFor="ai-tutor-query" className="sr-only">Ask AI Tutor</label>
-          <input
-              id="ai-tutor-query"
-              type="text"
-              aria-label="Ask AI Tutor"
-              placeholder={`Ask AI Tutor in ${teachingMode} mode...`}
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
-            <button
-              type="submit"
-              disabled={chatAction.isLoading || !userInput.trim()}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          {/* Main Chat Pane (3 Cols) */}
+          <div className="lg:col-span-3 flex h-[680px] flex-col overflow-hidden rounded-[24px] border border-slate-800/80 bg-slate-900/90 shadow-2xl relative">
+            
+            {/* Top Toolbar: Subject & Teaching Strategy */}
+            <div className="p-3.5 bg-slate-950/80 border-b border-slate-800 flex flex-col gap-2.5">
+              <div className="flex items-center justify-between gap-2">
+                {/* Mobile History Toggle & Subject Selector */}
+                <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
+                  <button
+                    onClick={() => setShowHistoryDrawer(true)}
+                    className="lg:hidden px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0"
+                  >
+                    <History className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Chats</span>
+                  </button>
+
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mr-1 hidden sm:inline">Subject:</span>
+                  {(['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'] as SubjectType[]).map(sub => (
+                    <button
+                      key={sub}
+                      onClick={() => setSubject(sub)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap ${
+                        subject === sub 
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm' 
+                          : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      {sub}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={handleNewConversation}
+                  className="hidden sm:flex px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg items-center gap-1 border border-slate-700 transition-all shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>New Chat</span>
+                </button>
+              </div>
+
+              {/* Teaching Strategy Mode Tabs */}
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-850">
+                <div className="flex items-center gap-1 overflow-x-auto w-full custom-scrollbar pb-0.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mr-1 shrink-0">Strategy:</span>
+                  {[
+                    { id: 'standard', label: 'Standard' },
+                    { id: 'socratic', label: 'Socratic' },
+                    { id: 'stepByStep', label: 'Step-by-Step' },
+                    { id: 'analogy', label: 'Analogy' },
+                    { id: 'teachUntilUnderstand', label: 'Teach Until Mastery' }
+                  ].map(m => {
+                    const isSelected = teachingMode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => setTeachingMode(m.id as AiTeachingMode)}
+                        className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap border ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
+                            : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border hidden md:inline-block shrink-0 ${modeMetadata[teachingMode].color}`}>
+                  {modeMetadata[teachingMode].badge}
+                </span>
+              </div>
+
+              {/* Mode Description Bar */}
+              <div className="text-[11px] text-slate-400 flex items-center justify-between bg-slate-900/60 px-3 py-1 rounded-lg border border-slate-800/60">
+                <span>{modeMetadata[teachingMode].desc}</span>
+                {teachingMode === 'teachUntilUnderstand' && (
+                  <span className="text-purple-300 font-bold text-[10px]">
+                    Mastery Stage: {masteryState.currentStage}/{masteryState.totalStages}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Messages Scroll Container */}
+            <div
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 custom-scrollbar"
             >
-              {chatAction.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              <span className="hidden sm:inline">{chatAction.isLoading ? 'AI Tutor is answering...' : 'Ask'}</span>
-            </button>
-          </form>
+              {messages.map((msg, idx) => {
+                const isUser = msg.sender === 'user';
+                return (
+                  <div
+                    key={msg.id || idx}
+                    className={`flex gap-3 max-w-3xl ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+                  >
+                    {/* Avatar */}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-md ${
+                      isUser ? 'bg-emerald-500 text-slate-950' : 'bg-indigo-600 text-white'
+                    }`}>
+                      {isUser ? 'You' : <Sparkles className="w-4 h-4" />}
+                    </div>
+
+                    {/* Message Bubble */}
+                    <div className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-lg ${
+                      isUser
+                        ? 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/30 rounded-tr-none'
+                        : 'bg-slate-800/95 text-slate-200 border border-slate-700/80 rounded-tl-none space-y-2'
+                    }`}>
+                      {/* Mode Badge for AI message */}
+                      {msg.modeUsed && !isUser && (
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 uppercase tracking-wider">
+                            Mode: {msg.modeUsed}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Content with KaTeX Mathematical & Chemical rendering */}
+                      <FormattedMathContent content={msg.text} />
+
+                      {/* Message Footer: Timestamp & Actions */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-1.5 border-t border-slate-700/40">
+                        <span>{msg.time}</span>
+                        {!isUser && (
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => copyToClipboard(msg.text)}
+                              className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
+                              title="Copy response"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>Copy</span>
+                            </button>
+                            <button
+                              onClick={() => handleSpeech(msg.text)}
+                              className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-bold transition-colors"
+                            >
+                              {isSpeaking ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                              <span>{isSpeaking ? 'Stop' : 'Speak'}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <AiActionStatus
+                statusMessage={chatAction.statusMessage}
+                errorMessage={chatAction.errorMessage}
+                isLoading={chatAction.isLoading}
+              />
+            </div>
+
+            {/* Floating "Scroll to Bottom" Button */}
+            {showScrollBottom && (
+              <button
+                onClick={() => scrollToBottom('smooth')}
+                className="absolute bottom-20 right-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full shadow-2xl border border-emerald-400 flex items-center gap-1.5 text-xs transition-all transform animate-bounce z-10"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+                <span>Jump to latest</span>
+              </button>
+            )}
+
+            {/* Input Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="p-3.5 bg-slate-950/90 border-t border-slate-800 flex gap-2"
+            >
+              <label htmlFor="ai-tutor-query" className="sr-only">Ask AI Tutor</label>
+              <input
+                id="ai-tutor-query"
+                type="text"
+                aria-label="Ask AI Tutor"
+                placeholder={`Ask ${subject} question in ${teachingMode} mode...`}
+                value={userInput}
+                disabled={chatAction.isLoading}
+                onChange={(e) => setUserInput(e.target.value)}
+                className="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={chatAction.isLoading || !userInput.trim()}
+                className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-lg active:scale-95"
+              >
+                {chatAction.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span className="hidden sm:inline">{chatAction.isLoading ? 'Answering...' : 'Send'}</span>
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
@@ -496,6 +857,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                 <option value="Chemistry">Chemistry (e.g. Reactivity Series, Electronegativity)</option>
                 <option value="Physics">Physics (e.g. Electromagnetic Spectrum, Lens Rules)</option>
                 <option value="English">English (e.g. Preposition rules, Adjective order)</option>
+                <option value="Logical Reasoning">Logical Reasoning (e.g. Syllogism Rules)</option>
               </select>
             </div>
 
@@ -554,9 +916,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                 </button>
               </div>
 
-              <div className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
-                {mnemonicResult}
-              </div>
+              <FormattedMathContent content={mnemonicResult} />
             </div>
           )}
         </div>
@@ -564,4 +924,3 @@ export const AiTutor: React.FC<AiTutorProps> = ({
     </div>
   );
 };
-

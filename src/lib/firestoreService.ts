@@ -48,7 +48,8 @@ import {
   AdminUser as AdminUserDocument,
   SavedAiQuiz,
   GeneratedQuestion,
-  ImportJob
+  ImportJob,
+  AiConversation
 } from '../types';
 import type { PrismSession } from '../components/prism/prismTypes';
 
@@ -461,6 +462,65 @@ export function subscribeToCustomMCQs(userId: string, onUpdate: (items: CustomMC
   }, (err) => {
     handleError('Error subscribing to custom MCQs:', err);
   });
+}
+
+// ------------------
+// AI Tutor & Chat Conversations
+// ------------------
+export async function saveAiConversation(userId: string, conversation: Partial<AiConversation> & { id: string }): Promise<string> {
+  if (!userId || !conversation?.id) return '';
+  try {
+    const timestamp = timestampValue();
+    const docRef = doc(db, 'aiConversations', conversation.id);
+    await setDoc(docRef, {
+      ...conversation,
+      userId,
+      updatedAt: timestamp,
+      createdAt: conversation.createdAt || timestamp
+    }, { merge: true });
+    return conversation.id;
+  } catch (err) {
+    handleError('Error saving AI conversation:', err);
+    return '';
+  }
+}
+
+export function subscribeToAiConversations(userId: string, onUpdate: (items: AiConversation[]) => void) {
+  if (!userId) return () => {};
+  const q = query(collection(db, 'aiConversations'), where('userId', '==', userId));
+  return onSnapshot(q, (snapshot) => {
+    const items: AiConversation[] = [];
+    snapshot.forEach((d) => items.push(d.data() as AiConversation));
+    items.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    onUpdate(items);
+  }, (err) => {
+    handleError('Error subscribing to AI conversations:', err);
+  });
+}
+
+export async function deleteAiConversation(conversationId: string) {
+  if (!conversationId) return;
+  try {
+    const docRef = doc(db, 'aiConversations', conversationId);
+    await deleteDoc(docRef);
+  } catch (err) {
+    handleError('Error deleting AI conversation:', err);
+  }
+}
+
+export async function getAiConversation(conversationId: string): Promise<AiConversation | null> {
+  if (!conversationId) return null;
+  try {
+    const docRef = doc(db, 'aiConversations', conversationId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as AiConversation;
+    }
+    return null;
+  } catch (err) {
+    handleError('Error fetching AI conversation:', err);
+    return null;
+  }
 }
 
 // ------------------
