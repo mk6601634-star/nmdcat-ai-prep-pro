@@ -9,7 +9,9 @@ import {
   XCircle, 
   FileText,
   Filter,
-  Sparkles
+  Sparkles,
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 import { FormattedMathContent } from './FormattedMathContent';
 
@@ -26,9 +28,14 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
 }) => {
   const [subjectFilter, setSubjectFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('unresolved');
+  
+  // Re-Test Session State — Scoped & Isolated
   const [retestMode, setRetestMode] = useState<boolean>(false);
+  const [retestQueue, setRetestQueue] = useState<SavedMistake[]>([]);
   const [retestIndex, setRetestIndex] = useState<number>(0);
-  const [retestAnswers, setRetestAnswers] = useState<Record<number, number>>({});
+  const [retestAnswers, setRetestAnswers] = useState<Record<string, number>>({});
+  const [isProcessingAnswer, setIsProcessingAnswer] = useState<boolean>(false);
+
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState<string>('');
 
@@ -54,9 +61,65 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
     setNoteText('');
   };
 
-  // Re-test quiz handlers
-  const currentRetestItem = filteredMistakes[retestIndex];
-  const isRetestAnswered = retestAnswers[retestIndex] !== undefined;
+  // ----------------------------------------------------
+  // Re-test Session Controls (Frozen Queue & ID-Scoped)
+  // ----------------------------------------------------
+  const handleStartRetest = () => {
+    if (filteredMistakes.length === 0) return;
+    setRetestQueue([...filteredMistakes]);
+    setRetestIndex(0);
+    setRetestAnswers({});
+    setIsProcessingAnswer(false);
+    setRetestMode(true);
+  };
+
+  const handleExitRetest = () => {
+    setRetestMode(false);
+    setRetestQueue([]);
+    setRetestAnswers({});
+    setRetestIndex(0);
+    setIsProcessingAnswer(false);
+  };
+
+  const currentRetestItem = retestQueue[retestIndex];
+  const currentQuestionId = currentRetestItem?.questionId || currentRetestItem?.question?.id || `q_${retestIndex}`;
+  const userChoice = currentRetestItem ? retestAnswers[currentQuestionId] : undefined;
+  const isRetestAnswered = userChoice !== undefined;
+
+  const handleAnswerRetest = (optIdx: number) => {
+    if (!currentRetestItem || isRetestAnswered || isProcessingAnswer) return;
+
+    setIsProcessingAnswer(true);
+    const qId = currentQuestionId;
+
+    // Atomically record user choice keyed by questionId (never by array index)
+    setRetestAnswers(prev => ({ ...prev, [qId]: optIdx }));
+
+    // If correct, mark resolved in state and storage
+    if (optIdx === currentRetestItem.question.correctIndex) {
+      toggleResolve(currentRetestItem.questionId);
+    }
+
+    setIsProcessingAnswer(false);
+  };
+
+  const handleNextRetestQuestion = () => {
+    if (retestIndex < retestQueue.length - 1) {
+      setRetestIndex(prev => prev + 1);
+      setIsProcessingAnswer(false);
+    } else {
+      setRetestMode(false);
+      setRetestQueue([]);
+      alert('Re-test completed! You have practiced all questions in this session.');
+    }
+  };
+
+  const handlePrevRetestQuestion = () => {
+    if (retestIndex > 0) {
+      setRetestIndex(prev => prev - 1);
+      setIsProcessingAnswer(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -77,11 +140,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
 
         {filteredMistakes.length > 0 && !retestMode && (
           <button
-            onClick={() => {
-              setRetestMode(true);
-              setRetestIndex(0);
-              setRetestAnswers({});
-            }}
+            onClick={handleStartRetest}
             className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all w-full sm:w-auto justify-center"
           >
             <RotateCcw className="w-4 h-4" />
@@ -92,13 +151,16 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
 
       {/* Retest Quiz Mode */}
       {retestMode && currentRetestItem && (
-        <div className="bg-slate-900/90 p-6 sm:p-8 rounded-2xl border border-amber-500/30 shadow-xl max-w-2xl mx-auto space-y-6">
+        <div 
+          key={currentQuestionId}
+          className="bg-slate-900/90 p-6 sm:p-8 rounded-2xl border border-amber-500/30 shadow-xl max-w-2xl mx-auto space-y-6"
+        >
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <span className="text-xs font-bold text-amber-400">
-              Mistake Re-Test: Question {retestIndex + 1} of {filteredMistakes.length}
+              Mistake Re-Test: Question {retestIndex + 1} of {retestQueue.length}
             </span>
             <button
-              onClick={() => setRetestMode(false)}
+              onClick={handleExitRetest}
               className="text-xs text-slate-400 hover:text-white"
             >
               Exit Re-Test
@@ -116,7 +178,6 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
 
           <div className="space-y-3">
             {currentRetestItem.question.options.map((opt, optIdx) => {
-              const userChoice = retestAnswers[retestIndex];
               const isSelected = userChoice === optIdx;
               const isCorrect = optIdx === currentRetestItem.question.correctIndex;
 
@@ -130,19 +191,12 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
               return (
                 <button
                   key={optIdx}
-                  onClick={() => {
-                    if (!isRetestAnswered) {
-                      setRetestAnswers(prev => ({ ...prev, [retestIndex]: optIdx }));
-                      if (optIdx === currentRetestItem.question.correctIndex) {
-                        toggleResolve(currentRetestItem.questionId);
-                      }
-                    }
-                  }}
-                  disabled={isRetestAnswered}
+                  onClick={() => handleAnswerRetest(optIdx)}
+                  disabled={isRetestAnswered || isProcessingAnswer}
                   className={`w-full flex items-center justify-between p-4 rounded-xl border text-xs sm:text-sm text-left transition-all ${btnStyle}`}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="shrink-0">{String.fromCharCode(65 + optIdx)}.</span>
+                    <span className="shrink-0 font-bold">{String.fromCharCode(65 + optIdx)}.</span>
                     <div className="flex-1 min-w-0">
                       <FormattedMathContent content={opt} className="inline-block" />
                     </div>
@@ -162,19 +216,22 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
           )}
 
           {isRetestAnswered && (
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between pt-2">
               <button
-                onClick={() => {
-                  if (retestIndex < filteredMistakes.length - 1) {
-                    setRetestIndex(prev => prev + 1);
-                  } else {
-                    setRetestMode(false);
-                    alert('Re-test completed!');
-                  }
-                }}
-                className="px-6 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 transition-colors"
+                onClick={handlePrevRetestQuestion}
+                disabled={retestIndex === 0}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 disabled:opacity-40"
               >
-                {retestIndex < filteredMistakes.length - 1 ? 'Next Question' : 'Finish Re-Test'}
+                <ChevronLeft className="w-4 h-4" />
+                <span>Previous</span>
+              </button>
+
+              <button
+                onClick={handleNextRetestQuestion}
+                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 transition-colors"
+              >
+                <span>{retestIndex < retestQueue.length - 1 ? 'Next Question' : 'Finish Re-Test'}</span>
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           )}
@@ -270,7 +327,7 @@ export const MistakeVault: React.FC<MistakeVaultProps> = ({
 
                       return (
                         <div key={oIdx} className={`p-2.5 rounded-lg border flex items-center gap-2 ${optStyle}`}>
-                          <span className="shrink-0">{String.fromCharCode(65 + oIdx)}.</span>
+                          <span className="shrink-0 font-bold">{String.fromCharCode(65 + oIdx)}.</span>
                           <div className="flex-1 min-w-0">
                             <FormattedMathContent content={opt} className="inline-block" />
                           </div>
