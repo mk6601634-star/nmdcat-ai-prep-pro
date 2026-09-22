@@ -342,7 +342,6 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
   const generateQuiz = async () => {
     setIsGenerating(true);
     setError(null);
-    setFallbackSource(null);
     setGeneratedQuestions([]);
     setUserAnswers({});
     setShowResults(false);
@@ -547,7 +546,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      const analysisData = data?.analysis || (data?.whyYouWereWrong ? data : null);
+      const analysisData = (data as any)?.analysis || ((data as any)?.whyYouWereWrong ? data : null);
       if (analysisData) {
         setWrongAnswerAnalyses(prev => ({ ...prev, [questionIndex]: analysisData }));
       } else {
@@ -583,7 +582,7 @@ export const SimpleAiQuizGenerator: React.FC<SimpleAiQuizGeneratorProps> = ({
         })
       });
 
-      const insightsData = data?.insights || (data?.overallPerformance ? data : null);
+      const insightsData = (data as any)?.insights || ((data as any)?.overallPerformance ? data : null);
       if (insightsData) {
         setDeepInsights(insightsData);
       } else {

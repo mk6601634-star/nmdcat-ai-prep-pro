@@ -51,6 +51,8 @@ import {
 import { MCQQuestion, SubjectType, SavedMistake, ExamAttempt, SyllabusTopic } from '../types';
 import { generateExam } from '../utils/nmdcatExamGenerator';
 import { matchQuestionsFromBank } from '../utils/topicMatcher';
+import { PMDC_SYLLABUS_TOPICS } from '../data/nmdcatData';
+import { fetchPublishedMcqsForTopic, fetchRandomPublishedMcqs } from '../lib/firestoreService';
 import NMDCAT_CONFIG from '../constants/nmdcatConfig';
 
 interface CustomTestBuilderProps {
@@ -98,8 +100,8 @@ export interface CustomTestConfig {
   createdAt?: string;
 }
 
-// Comprehensive Taxonomy Data
-const TAXONOMY_DATA: Record<SubjectType, {
+// Dynamically generate taxonomy strictly aligned with official PMDC Syllabus and Firestore collections
+function generateTaxonomyData(customTopics: SyllabusTopic[] = []): Record<SubjectType, {
   totalQuestions: number;
   chapters: {
     name: string;
@@ -109,247 +111,64 @@ const TAXONOMY_DATA: Record<SubjectType, {
       subtopics: string[];
     }[];
   }[];
-}> = {
-  Biology: {
-    totalQuestions: 4560,
-    chapters: [
-      {
-        name: 'Cell Biology & Organelles',
-        questionCount: 840,
-        topics: [
-          {
-            name: 'Cell Structure & Organelles',
-            subtopics: ['Endomembrane System', 'Lysosomes & Autophagy', 'Ribosomes & Protein Synthesis', 'Fluid Mosaic Model']
-          },
-          {
-            name: 'Cell Wall & Cytoskeleton',
-            subtopics: ['Microtubules & Tubulin', 'Actin Filaments', 'Plant Cell Wall Peptidoglycan']
-          }
-        ]
-      },
-      {
-        name: 'Bioenergetics & Cellular Respiration',
-        questionCount: 920,
-        topics: [
-          {
-            name: 'Photosynthesis',
-            subtopics: ['Z-Scheme & Light Reactions', 'Calvin Cycle (C3)', 'Rubisco Kinetics', 'Photophosphorylation']
-          },
-          {
-            name: 'Cellular Respiration',
-            subtopics: ['Glycolysis Net Yield', 'Krebs Cycle Steps', 'Electron Transport Chain (ETC)', 'Chemiosmosis & ATP Synthase']
-          }
-        ]
-      },
-      {
-        name: 'Genetics & Molecular Inheritance',
-        questionCount: 780,
-        topics: [
-          {
-            name: 'DNA & Replication',
-            subtopics: ['Leading Strand 5 to 3', 'Lagging Strand & Okazaki Fragments', 'DNA Polymerase III & Helicase']
-          },
-          {
-            name: 'Mendelian & Sex-Linked Genetics',
-            subtopics: ['Dihybrid Ratio 9:3:3:1', 'Haemophilia & Colorblindness', 'Incomplete Dominance']
-          }
-        ]
-      },
-      {
-        name: 'Human Physiology & Coordination',
-        questionCount: 1120,
-        topics: [
-          {
-            name: 'Nervous Coordination',
-            subtopics: ['Resting Membrane Potential (-70mV)', 'Action Potential & Na/K Pump', 'Synaptic Transmission & Neurotransmitters']
-          },
-          {
-            name: 'Endocrine System',
-            subtopics: ['Pituitary Hormones', 'Insulin & Glucagon Mechanism', 'Steroid vs Peptide Receptors']
-          },
-          {
-            name: 'Circulation & Heart',
-            subtopics: ['Cardiac Cycle (0.8s)', 'SA Node & AV Node Delay', 'Heart Valves & Sound S1/S2']
-          }
-        ]
-      },
-      {
-        name: 'Reproduction & Development',
-        questionCount: 900,
-        topics: [
-          {
-            name: 'Human Reproduction',
-            subtopics: ['Spermatogenesis & Oogenesis', 'Menstrual Cycle & FSH/LH', 'Embryonic Germ Layers']
-          }
-        ]
+}> {
+  const subjects: SubjectType[] = ['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'];
+  const allTopics = [...PMDC_SYLLABUS_TOPICS, ...customTopics];
+  
+  const result: Record<SubjectType, {
+    totalQuestions: number;
+    chapters: {
+      name: string;
+      questionCount: number;
+      topics: {
+        name: string;
+        subtopics: string[];
+      }[];
+    }[];
+  }> = {
+    Biology: { totalQuestions: 0, chapters: [] },
+    Chemistry: { totalQuestions: 0, chapters: [] },
+    Physics: { totalQuestions: 0, chapters: [] },
+    English: { totalQuestions: 0, chapters: [] },
+    'Logical Reasoning': { totalQuestions: 0, chapters: [] },
+  };
+
+  subjects.forEach(sub => {
+    const subTopics = allTopics.filter(t => t.subject === sub);
+    const unitMap = new Map<string, {
+      name: string;
+      questionCount: number;
+      topics: { name: string; subtopics: string[] }[];
+    }>();
+
+    subTopics.forEach(t => {
+      const unitName = t.unit || 'General Concepts';
+      if (!unitMap.has(unitName)) {
+        unitMap.set(unitName, {
+          name: unitName,
+          questionCount: 0,
+          topics: []
+        });
       }
-    ]
-  },
-  Chemistry: {
-    totalQuestions: 3240,
-    chapters: [
-      {
-        name: 'Reaction Kinetics & Energetics',
-        questionCount: 650,
-        topics: [
-          {
-            name: 'Chemical Kinetics',
-            subtopics: ['Zero & First Order Rate Laws', 'Activation Energy & Arrhenius Eq', 'Catalysts & Transition States']
-          },
-          {
-            name: 'Thermochemistry',
-            subtopics: ['Enthalpy of Reaction', 'Hess Law Calculations', 'Born-Haber Cycle']
-          }
-        ]
-      },
-      {
-        name: 'Electrochemistry & Solutions',
-        questionCount: 580,
-        topics: [
-          {
-            name: 'Electrochemistry',
-            subtopics: ['Galvanic vs Electrolytic Cells', 'Standard Hydrogen Electrode (SHE)', 'Nernst Equation & EMF']
-          },
-          {
-            name: 'Solutions & Colloids',
-            subtopics: ['Molarity & Molality', 'Raoult Law & Colligative Properties', 'Buffer Solutions']
-          }
-        ]
-      },
-      {
-        name: 'Organic Reactions & Mechanism',
-        questionCount: 1100,
-        topics: [
-          {
-            name: 'Alkyl Halides',
-            subtopics: ['SN1 vs SN2 Mechanisms', 'Walden Inversion', 'Carbocation Stability Order']
-          },
-          {
-            name: 'Aldehydes & Ketones',
-            subtopics: ['Nucleophilic Addition', 'Tollens & Fehling Test', 'Aldol Condensation & Haloform']
-          },
-          {
-            name: 'Carboxylic Acids & Amines',
-            subtopics: ['Esterification', 'Acidity of Carboxylic Acids', 'Amide Formation']
-          }
-        ]
-      },
-      {
-        name: 'Chemical Equilibrium & Acid-Base',
-        questionCount: 910,
-        topics: [
-          {
-            name: 'Equilibrium Constant',
-            subtopics: ['Le Chatelier Principle', 'Kc and Kp Relations', 'Solubility Product Ksp']
-          }
-        ]
-      }
-    ]
-  },
-  Physics: {
-    totalQuestions: 2980,
-    chapters: [
-      {
-        name: 'Work, Power & Energy',
-        questionCount: 520,
-        topics: [
-          {
-            name: 'Work & Energy Principles',
-            subtopics: ['Work Done in Closed Loop', 'Conservative vs Non-Conservative', 'Work-Energy Theorem']
-          }
-        ]
-      },
-      {
-        name: 'Oscillations & Waves',
-        questionCount: 680,
-        topics: [
-          {
-            name: 'Simple Harmonic Motion',
-            subtopics: ['Simple Pendulum T = 2pi sqrt(l/g)', 'Resonance & Damping', 'Energy in SHM']
-          },
-          {
-            name: 'Waves & Sound',
-            subtopics: ['Doppler Effect Frequency Shift', 'Standing Waves & Harmonics', 'Interference & Beats']
-          }
-        ]
-      },
-      {
-        name: 'Electrostatics & Electric Currents',
-        questionCount: 980,
-        topics: [
-          {
-            name: 'Coulomb Law & Capacitors',
-            subtopics: ['Coulomb Formula in Medium', 'Electric Potential & Gauss Law', 'Capacitance Energy (1/2 CV^2)']
-          },
-          {
-            name: 'Current Electricity',
-            subtopics: ['Kirchhoff Current & Voltage Laws', 'Wheatstone Bridge', 'Potentiometer Principle']
-          }
-        ]
-      },
-      {
-        name: 'Nuclear & Modern Physics',
-        questionCount: 800,
-        topics: [
-          {
-            name: 'Atomic Spectra & Nuclear',
-            subtopics: ['Bohr Hydrogen Model', 'Radioactive Half Life', 'Mass Defect & Binding Energy']
-          }
-        ]
-      }
-    ]
-  },
-  English: {
-    totalQuestions: 1850,
-    chapters: [
-      {
-        name: 'Vocabulary & Contextual Usage',
-        questionCount: 950,
-        topics: [
-          {
-            name: 'High-Yield Medical Vocab',
-            subtopics: ['PMDC Word Bank Synonyms', 'Antonyms in Clinical Context', 'Prefix & Suffix Etymology']
-          }
-        ]
-      },
-      {
-        name: 'Grammar & Sentence Structure',
-        questionCount: 900,
-        topics: [
-          {
-            name: 'Rules of English Grammar',
-            subtopics: ['Subject-Verb Agreement', 'Conditional Sentences', 'Dangling & Misplaced Modifiers', 'Tense Consistency']
-          }
-        ]
-      }
-    ]
-  },
-  'Logical Reasoning': {
-    totalQuestions: 1420,
-    chapters: [
-      {
-        name: 'Critical Logic & Deduction',
-        questionCount: 720,
-        topics: [
-          {
-            name: 'Syllogisms & Assumptions',
-            subtopics: ['Statement & Logical Assumptions', 'Valid Deductive Inferences', 'Venn Diagram Problems']
-          }
-        ]
-      },
-      {
-        name: 'Series & Pattern Matching',
-        questionCount: 700,
-        topics: [
-          {
-            name: 'Sequences & Coding',
-            subtopics: ['Letter & Symbol Series', 'Cause and Effect Reasoning', 'Alphabetical Coding']
-          }
-        ]
-      }
-    ]
-  }
-};
+      const unitEntry = unitMap.get(unitName)!;
+      unitEntry.topics.push({
+        name: t.topic,
+        subtopics: t.keyPoints || []
+      });
+      unitEntry.questionCount += 40;
+    });
+
+    const chapters = Array.from(unitMap.values());
+    const totalQ = chapters.reduce((sum, c) => sum + c.questionCount, 0);
+
+    result[sub] = {
+      totalQuestions: totalQ || 500,
+      chapters
+    };
+  });
+
+  return result;
+}
 
 // AI Smart Templates Presets
 const AI_SMART_TEMPLATES: {
@@ -455,6 +274,10 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
   onSaveExamAttempt,
   setSavedMistakes
 }) => {
+  // Dynamically compute syllabus taxonomy based on PMDC syllabus + custom topics
+  const TAXONOMY_DATA = useMemo(() => generateTaxonomyData(topics), [topics]);
+  const [isGeneratingTest, setIsGeneratingTest] = useState<boolean>(false);
+
   // Main view state: 'builder' | 'active_test' | 'analytics' | 'saved_templates'
   const [activeTab, setActiveTab] = useState<'builder' | 'ai_templates' | 'saved_templates' | 'active_test' | 'analytics'>('builder');
 
@@ -747,105 +570,146 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
   };
 
   // Generate Test Engine Handler
-  const handleGenerateTest = () => {
+  const handleGenerateTest = async () => {
     if (config.selectedSubjects.length === 0) {
       alert('Please select at least 1 subject before generating test.');
       return;
     }
 
-    let sourceBank = questionBank;
-    if (!sourceBank || sourceBank.length === 0) {
-      try {
-        const cached = localStorage.getItem('nmdcat_qbank');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            sourceBank = parsed;
+    setIsGeneratingTest(true);
+    try {
+      let sourceBank = questionBank;
+      if (!sourceBank || sourceBank.length === 0) {
+        try {
+          const cached = localStorage.getItem('nmdcat_qbank');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              sourceBank = parsed;
+            }
           }
+        } catch {}
+      }
+
+      // Filter matching questions from sourceBank
+      let pool = (sourceBank || []).filter(q => config.selectedSubjects.includes(q.subject));
+
+      // Filter by chapter or topic if selected
+      if (config.selectedTopics.length > 0 || config.selectedChapters.length > 0) {
+        const topicMatches: MCQQuestion[] = [];
+        for (const t of config.selectedTopics) {
+          topicMatches.push(...matchQuestionsFromBank(pool, { topic: t }));
         }
-      } catch {}
-    }
-
-    // Filter matching questions from sourceBank
-    let pool = (sourceBank || []).filter(q => config.selectedSubjects.includes(q.subject));
-
-    // Filter by chapter or topic if selected
-    if (config.selectedTopics.length > 0 || config.selectedChapters.length > 0) {
-      const topicMatches: MCQQuestion[] = [];
-      for (const t of config.selectedTopics) {
-        topicMatches.push(...matchQuestionsFromBank(pool, { topic: t }));
-      }
-      for (const c of config.selectedChapters) {
-        topicMatches.push(...matchQuestionsFromBank(pool, { chapter: c }));
-      }
-      if (topicMatches.length > 0) {
-        const seen = new Set<string>();
-        const deduped: MCQQuestion[] = [];
-        for (const q of topicMatches) {
-          if (!seen.has(q.id)) {
-            seen.add(q.id);
-            deduped.push(q);
+        for (const c of config.selectedChapters) {
+          topicMatches.push(...matchQuestionsFromBank(pool, { chapter: c }));
+        }
+        if (topicMatches.length > 0) {
+          const seen = new Set<string>();
+          const deduped: MCQQuestion[] = [];
+          for (const q of topicMatches) {
+            if (!seen.has(q.id)) {
+              seen.add(q.id);
+              deduped.push(q);
+            }
           }
+          pool = deduped;
         }
-        pool = deduped;
       }
-    }
 
-    // Filter by difficulty if not mixed
-    if (config.difficulty !== 'Mixed') {
-      const diffFiltered = pool.filter(q => q.difficulty === config.difficulty);
-      if (diffFiltered.length > 0) {
-        pool = diffFiltered;
+      // Remote Firestore fetch fallback if pool has fewer questions than requested
+      if (pool.length < config.questionCount) {
+        try {
+          for (const sub of config.selectedSubjects) {
+            if (config.selectedChapters.length > 0) {
+              for (const chap of config.selectedChapters) {
+                const remote = await fetchPublishedMcqsForTopic(sub, chap, undefined, config.questionCount * 2);
+                if (remote && remote.length > 0) {
+                  pool.push(...(remote as MCQQuestion[]));
+                }
+              }
+            } else {
+              const remote = await fetchRandomPublishedMcqs({ subject: sub, limitCount: config.questionCount * 2 });
+              if (remote && remote.length > 0) {
+                pool.push(...(remote as MCQQuestion[]));
+              }
+            }
+          }
+          // Deduplicate pool
+          const seen = new Set<string>();
+          pool = pool.filter(q => {
+            const id = q.id || q.question;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+        } catch (err) {
+          console.warn('Failed remote fetch in CustomTestBuilder:', err);
+        }
       }
-    }
 
-    // Filter by mistake book if performance filter checked
-    if (config.performanceFilters.includes('Mistake Book') && savedMistakes.length > 0) {
-      const mistakeQIds = new Set(savedMistakes.map(m => m.questionId));
-      const mistakesPool = (sourceBank || []).filter(q => mistakeQIds.has(q.id));
-      if (mistakesPool.length > 0) {
-        pool = mistakesPool;
+      // Filter by difficulty if not mixed
+      if (config.difficulty !== 'Mixed') {
+        const diffFiltered = pool.filter(q => q.difficulty === config.difficulty);
+        if (diffFiltered.length > 0) {
+          pool = diffFiltered;
+        }
       }
-    }
 
-    // If balanced distribution requested, use centralized generator over the filtered pool
-    let finalQuestions: MCQQuestion[] = [];
-    if (config.randomization.balancedDistribution) {
-      finalQuestions = generateExam(pool, config.questionCount, config.selectedSubjects);
-    } else {
-      finalQuestions = [...pool];
-    }
+      // Filter by mistake book if performance filter checked
+      if (config.performanceFilters.includes('Mistake Book') && savedMistakes.length > 0) {
+        const mistakeQIds = new Set(savedMistakes.map(m => m.questionId));
+        const mistakesPool = (sourceBank || []).filter(q => mistakeQIds.has(q.id));
+        if (mistakesPool.length > 0) {
+          pool = mistakesPool;
+        }
+      }
 
-    if (finalQuestions.length === 0) {
-      alert('No database questions found matching your filter criteria. Please broaden your chapter/topic selection.');
-      return;
-    }
+      // If balanced distribution requested, use centralized generator over the filtered pool
+      let finalQuestions: MCQQuestion[] = [];
+      if (config.randomization.balancedDistribution) {
+        finalQuestions = generateExam(pool, config.questionCount, config.selectedSubjects);
+      } else {
+        finalQuestions = [...pool];
+      }
 
-    // Limit to requested count
-    finalQuestions = finalQuestions.slice(0, config.questionCount);
+      if (finalQuestions.length === 0) {
+        // Fallback to any matching questions from sourceBank or pool
+        finalQuestions = pool.length > 0 ? pool : (sourceBank || []).filter(q => config.selectedSubjects.includes(q.subject));
+      }
 
-    // Randomize if enabled
-    if (config.randomization.shuffleQuestions) {
-      finalQuestions = [...finalQuestions].sort(() => Math.random() - 0.5);
-    }
+      if (finalQuestions.length === 0) {
+        alert('No database questions found matching your filter criteria. Please broaden your chapter/topic selection.');
+        return;
+      }
 
-    setActiveTestQuestions(finalQuestions);
-    setCurrentQIndex(0);
-    setUserAnswers({});
-    setConfidenceRatings({});
-    setFlagged({});
-    setCheckedInLearningMode({});
-    setTestStartTime(Date.now());
+      // Limit to requested count
+      finalQuestions = finalQuestions.slice(0, config.questionCount);
 
-    // Timer setup
-    const mins = config.timerMode === 'Speed' ? Math.max(5, Math.ceil(config.questionCount * 0.5)) : config.questionCount;
-    setTimeRemainingSeconds(mins * 60);
+      // Randomize if enabled
+      if (config.randomization.shuffleQuestions) {
+        finalQuestions = [...finalQuestions].sort(() => Math.random() - 0.5);
+      }
 
-    setShowPreviewModal(false);
-    setActiveTab('active_test');
+      setActiveTestQuestions(finalQuestions);
+      setCurrentQIndex(0);
+      setUserAnswers({});
+      setConfidenceRatings({});
+      setFlagged({});
+      setCheckedInLearningMode({});
+      setTestStartTime(Date.now());
 
-    if (onStartTestSession) {
-      onStartTestSession(finalQuestions, config);
+      // Timer setup
+      const mins = config.timerMode === 'Speed' ? Math.max(5, Math.ceil(config.questionCount * 0.5)) : config.questionCount;
+      setTimeRemainingSeconds(mins * 60);
+
+      setShowPreviewModal(false);
+      setActiveTab('active_test');
+
+      if (onStartTestSession) {
+        onStartTestSession(finalQuestions, config);
+      }
+    } finally {
+      setIsGeneratingTest(false);
     }
   };
 

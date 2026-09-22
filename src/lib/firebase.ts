@@ -20,12 +20,13 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Firestore with custom databaseId if defined, and enable multi-tab persistence
+const customDbId = (firebaseConfig as any).firestoreDatabaseId;
 let db;
 try {
-  if (firebaseConfig.firestoreDatabaseId) {
+  if (customDbId) {
     db = initializeFirestore(app, {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    }, firebaseConfig.firestoreDatabaseId);
+    }, customDbId);
   } else {
     db = initializeFirestore(app, {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
@@ -33,7 +34,7 @@ try {
   }
 } catch {
   // Fallback if already initialized
-  db = firebaseConfig.firestoreDatabaseId ? getFirestore(app, firebaseConfig.firestoreDatabaseId) : getFirestore(app);
+  db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 }
 
 export { db };

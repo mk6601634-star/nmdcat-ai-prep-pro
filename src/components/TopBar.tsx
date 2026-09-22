@@ -13,7 +13,8 @@ import {
   LogOut,
   ChevronDown,
   RefreshCw,
-  Check
+  Check,
+  ShieldCheck
 } from 'lucide-react';
 import { ExamAttempt, SavedMistake } from '../types';
 

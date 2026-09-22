@@ -178,7 +178,7 @@ export function subscribeToUserTopics(userId: string, onUpdate: (topics: Syllabu
     snapshot.forEach((d) => {
       loadedTopics.push(d.data() as SyllabusTopic);
     });
-    loadedTopics.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    loadedTopics.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(loadedTopics);
   }, (err) => {
     handleError('Error subscribing to topics:', err);
@@ -271,7 +271,7 @@ export function subscribeToExamAttempts(userId: string, onUpdate: (attempts: Exa
     snapshot.forEach((d) => {
       attempts.push(d.data() as ExamAttempt);
     });
-    attempts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    attempts.sort((a: any, b: any) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime());
     onUpdate(attempts);
   }, (err) => {
     handleError('Error subscribing to exam attempts:', err);
@@ -641,12 +641,12 @@ export async function bulkCreateAdminMcqs(
         verificationStatus: (q.status || targetStatus) === 'PUBLISHED' ? 'VERIFIED' : 'AI_GENERATED',
         authorType: q.authorType || 'IMPORTED',
         version: q.version || 1,
-        createdBy: q.createdBy || createdBy,
+        createdBy: (q as any).createdBy || createdBy,
         updatedBy: createdBy,
         updatedAt: timestamp,
         createdAt: q.createdAt || timestamp,
-        publishedAt: (q.status || targetStatus) === 'PUBLISHED' ? (q.publishedAt || timestamp) : undefined,
-        publishedBy: (q.status || targetStatus) === 'PUBLISHED' ? (q.publishedBy || createdBy) : undefined
+        publishedAt: (q.status || targetStatus) === 'PUBLISHED' ? ((q as any).publishedAt || timestamp) : undefined,
+        publishedBy: (q.status || targetStatus) === 'PUBLISHED' ? ((q as any).publishedBy || createdBy) : undefined
       }, { merge: true });
     });
 
@@ -849,15 +849,16 @@ export async function fetchPublishedMcqsForTopic(
 /**
  * Fetch random published MCQs bounded by count.
  */
-export async function fetchRandomPublishedMcqs(options: {
+export async function fetchRandomPublishedMcqs(options?: {
   subject?: string;
   limitCount?: number;
-}): Promise<Array<MCQQuestion & { id?: string }>> {
+} | number): Promise<Array<MCQQuestion & { id?: string }>> {
   try {
+    const opts = typeof options === 'number' ? { limitCount: options } : (options || {});
     const collectionRef = collection(db, adminCollections.mcqs);
     let constraints: any[] = [where('status', '==', 'PUBLISHED')];
-    if (options.subject) {
-      constraints.push(where('subject', '==', options.subject));
+    if (opts.subject) {
+      constraints.push(where('subject', '==', opts.subject));
     }
     const q = query(collectionRef, ...constraints);
     const snapshot = await getDocs(q);
@@ -866,8 +867,8 @@ export async function fetchRandomPublishedMcqs(options: {
       return { ...data, id: data.id || d.id, status: data.status || 'PUBLISHED' };
     });
     items.sort(() => Math.random() - 0.5);
-    if (options.limitCount && options.limitCount > 0) {
-      items = items.slice(0, options.limitCount);
+    if (opts.limitCount && opts.limitCount > 0) {
+      items = items.slice(0, opts.limitCount);
     }
     return items;
   } catch (err) {
@@ -1019,7 +1020,7 @@ export function subscribeToAdminNotes(onUpdate: (items: Array<DefinitionItem & {
   return onSnapshot(q, (snapshot) => {
     const items: Array<DefinitionItem & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as DefinitionItem & { id: string; status: AdminContentStatus }));
-    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    items.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin notes:', err);
@@ -1062,7 +1063,7 @@ export function subscribeToAdminFlashcards(onUpdate: (items: Array<Flashcard & {
   return onSnapshot(q, (snapshot) => {
     const items: Array<Flashcard & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as Flashcard & { id: string; status: AdminContentStatus }));
-    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    items.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin flashcards:', err);
@@ -1105,7 +1106,7 @@ export function subscribeToAdminFormulas(onUpdate: (items: Array<FormulaItem & {
   return onSnapshot(q, (snapshot) => {
     const items: Array<FormulaItem & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as FormulaItem & { id: string; status: AdminContentStatus }));
-    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    items.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin formulas:', err);
@@ -1148,7 +1149,7 @@ export function subscribeToAdminReactions(onUpdate: (items: Array<ReactionItem &
   return onSnapshot(q, (snapshot) => {
     const items: Array<ReactionItem & { id: string; status: AdminContentStatus }> = [];
     snapshot.forEach((d) => items.push(d.data() as ReactionItem & { id: string; status: AdminContentStatus }));
-    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    items.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     onUpdate(items);
   }, (err) => {
     handleError('Error subscribing to admin reactions:', err);

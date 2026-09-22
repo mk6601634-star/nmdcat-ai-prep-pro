@@ -408,7 +408,8 @@ export interface AuditLogEntry {
     | 'REVIEW'
     | 'ARCHIVE'
     | 'ROLE_CHANGE'
-    | 'BACKUP';
+    | 'BACKUP'
+    | 'IMPORT';
   targetCollection: string;
   targetId: string;
   targetType: string;

@@ -1,3 +1,5 @@
+import { auth, signInAnonymously } from './firebase';
+
 export type AiRequestErrorType =
   | 'timeout'
   | 'network'
@@ -40,10 +42,40 @@ const DEFAULT_RETRY_DELAY_MS = 500;
 
 const isServiceUnavailableStatus = (status: number) => [502, 503, 504].includes(status);
 const isAuthStatus = (status: number) => status === 401 || status === 403;
-const isRetryableStatus = (status: number) => [408, 429, 502, 503, 504].includes(status);
+const isRetryableStatus = (status: number) => [401, 408, 429, 502, 503, 504].includes(status);
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const AI_REQUEST_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
+
+export async function getOrEnsureAuthToken(forceRefresh = false): Promise<string | null> {
+  try {
+    let user = auth.currentUser;
+    if (!user) {
+      // Wait briefly for existing session restoration (up to 1200ms)
+      await new Promise<void>((resolve) => {
+        const unsubscribe = auth.onAuthStateChanged((u) => {
+          unsubscribe();
+          user = u;
+          resolve();
+        });
+        setTimeout(() => resolve(), 1200);
+      });
+    }
+
+    if (!user) {
+      // Auto sign-in anonymously so every user gets an active Firebase token
+      const cred = await signInAnonymously(auth);
+      user = cred.user;
+    }
+
+    if (user) {
+      return await user.getIdToken(forceRefresh);
+    }
+  } catch (err) {
+    console.warn('[aiFetch] Error resolving Firebase auth token:', err);
+  }
+  return null;
+}
 
 export function getAiFriendlyMessage(error: unknown): string {
   if (error instanceof AiRequestError) {
@@ -110,8 +142,17 @@ export async function aiFetch<T = any>(
     }, timeoutMs);
 
     try {
+      const headers = new Headers(init.headers || {});
+      if (!headers.has('Authorization')) {
+        const token = await getOrEnsureAuthToken(attempt > 0);
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+      }
+
       const response = await fetch(url, {
         ...init,
+        headers,
         signal,
       });
 
@@ -154,10 +195,13 @@ export async function aiFetch<T = any>(
 
         if (
           attempt < maxRetries &&
-          (isRetryableStatus(response.status) || error.type === 'service_unavailable')
+          (isRetryableStatus(response.status) || error.type === 'service_unavailable' || error.type === 'auth')
         ) {
           lastError = error;
           attempt += 1;
+          if (error.type === 'auth') {
+            await getOrEnsureAuthToken(true);
+          }
           await delay(retryDelayMs * attempt);
           continue;
         }
