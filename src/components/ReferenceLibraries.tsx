@@ -347,7 +347,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
 
   const allFormulas = [
     ...userFormulas,
-    ...(publishedFormulas.length > 0 ? publishedFormulas : FORMULA_DATABASE)
+    ...publishedFormulas
   ];
   const filteredFormulas = allFormulas.filter(f => {
     const matchSearch = f.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -359,7 +359,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
 
   const allReactions = [
     ...userReactions,
-    ...(publishedReactions.length > 0 ? publishedReactions : REACTION_DATABASE)
+    ...publishedReactions
   ];
   const filteredReactions = allReactions.filter(r => {
     const matchSearch = r.reactionName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -371,7 +371,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
 
   const allDefinitions = [
     ...userDefinitions,
-    ...(publishedDefinitions.length > 0 ? publishedDefinitions : (DEFINITION_DATABASE || []))
+    ...publishedDefinitions
   ];
   const filteredDefinitions = allDefinitions.filter(d => {
     const matchSearch = (d.term || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -391,7 +391,7 @@ export const ReferenceLibraries: React.FC<ReferenceLibrariesProps> = ({
 
   const allMindMaps = [
     ...userMindMaps,
-    ...(publishedMindMaps.length > 0 ? publishedMindMaps : CONCEPT_MINDMAPS)
+    ...publishedMindMaps
   ];
 
   const handleGenerateFormulas = async () => {
