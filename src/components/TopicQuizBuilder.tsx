@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import UiCard from './UiCard';
 import { PMDC_SYLLABUS_TOPICS } from '../data/nmdcatData';
 import { fetchPublishedMcqsForTopic } from '../lib/firestoreService';
+import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
 import { matchQuestionsFromBank, scoreMcqMatch } from '../utils/topicMatcher';
 import { aiFetch } from '../lib/aiRequest';
 import { MCQQuestion } from '../types';
@@ -168,45 +169,25 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
 
     try {
       if (source === 'DATABASE') {
-        let items = [...matchingDbQuestions];
+        const result = await getCanonicalMCQs({
+          subject: selectedSubject,
+          chapter: selectedChapter,
+          topic: selectedTopic || undefined,
+          difficulty: difficulty === 'Any' ? undefined : difficulty,
+          count: numQuestions,
+          questionBank,
+          sourceType: 'DATABASE'
+        });
 
-        // If local memory count is 0, attempt fallback direct Firestore fetch
-        if (items.length === 0) {
-          const fetched = await fetchPublishedMcqsForTopic(selectedSubject, selectedChapter, topicLabel);
-          if (fetched && fetched.length > 0) {
-            items = fetched as MCQQuestion[];
-          }
-        }
-
-        // If still 0, fall back to any available questions for the subject
-        if (items.length === 0) {
-          items = matchQuestionsFromBank(questionBank, { subject: selectedSubject });
-        }
-
-        if (items.length === 0) {
+        if (!result.success || result.questions.length === 0) {
           setError(
-            `No database questions currently found for "${selectedSubject}". Please choose another subject or switch to "AI Generated" mode!`
+            `No database questions currently found for "${selectedSubject}". Please choose another topic or switch to "AI Generated" mode!`
           );
           setIsLoading(false);
           return;
         }
 
-        // Apply difficulty filter if specified
-        if (difficulty !== 'Any') {
-          const diffFiltered = items.filter(
-            q => normalize(q.difficulty) === normalize(difficulty)
-          );
-          if (diffFiltered.length >= 3) {
-            items = diffFiltered;
-          }
-        }
-
-        // Shuffle and slice requested amount
-        const shuffled = items.sort(() => Math.random() - 0.5);
-        const take = Math.min(numQuestions, shuffled.length);
-        const chosen = shuffled.slice(0, take);
-
-        onStartQuiz(chosen, 'DATABASE', {
+        onStartQuiz(result.questions, 'DATABASE', {
           subject: selectedSubject,
           chapter: selectedChapter,
           topic: topicLabel

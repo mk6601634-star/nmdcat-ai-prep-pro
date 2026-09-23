@@ -4,6 +4,7 @@ import { generateExam } from '../utils/nmdcatExamGenerator';
 import UiCard from './UiCard';
 import { MCQQuestion, ExamAttempt, SavedMistake, SubjectType } from '../types';
 import { fetchRandomPublishedMcqs } from '../lib/firestoreService';
+import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
 import { 
   Flame, 
   Timer, 
@@ -80,41 +81,57 @@ export const MockExam: React.FC<MockExamProps> = ({
     setExamError(null);
 
     try {
-      let pool = [...questionBank];
-
-      // Fallback 1: localStorage
-      if (pool.length === 0) {
-        try {
-          const cached = localStorage.getItem('nmdcat_qbank');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              pool = parsed;
-            }
-          }
-        } catch {}
-      }
-
-      // Fallback 2: Firestore remote fetch
-      if (pool.length === 0) {
-        try {
-          const remote = await fetchRandomPublishedMcqs(examLength * 2);
-          if (remote && remote.length > 0) {
-            pool = remote as MCQQuestion[];
-          }
-        } catch (err) {
-          console.warn('Failed to fetch remote questions for mock exam:', err);
-        }
-      }
-
-      if (pool.length === 0) {
-        setExamError('Database questions are still loading or unavailable. Please check your internet connection and retry in a moment.');
-        setIsGenerating(false);
-        return;
-      }
-
       const useSubjects = activeSubjectFilter === 'All' ? undefined : [activeSubjectFilter as SubjectType];
-      const generated = generateExam(pool, examLength, useSubjects as any);
+      
+      let generated: MCQQuestion[] = [];
+
+      if (useSubjects && useSubjects.length === 1) {
+        // Single subject mock exam: Retrieve canonical questions strictly for this subject
+        const retrieval = await getCanonicalMCQs({
+          subject: useSubjects[0],
+          count: examLength,
+          questionBank,
+          allowShuffle: true
+        });
+
+        if (!retrieval.success || retrieval.questions.length === 0) {
+          setExamError(`No database questions available for ${activeSubjectFilter}. Please choose "All" subjects or try another filter.`);
+          setIsGenerating(false);
+          return;
+        }
+
+        generated = retrieval.questions;
+      } else {
+        // Full NMDCAT Mock Exam across all official subjects
+        let pool = [...questionBank];
+        if (pool.length === 0) {
+          try {
+            const cached = localStorage.getItem('nmdcat_qbank');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                pool = parsed;
+              }
+            }
+          } catch {}
+        }
+
+        if (pool.length < examLength) {
+          // Retrieve canonical questions for each subject to ensure balanced coverage
+          const subjects: SubjectType[] = ['Biology', 'Chemistry', 'Physics', 'English', 'Logical Reasoning'];
+          for (const s of subjects) {
+            const res = await getCanonicalMCQs({
+              subject: s,
+              count: Math.ceil(examLength / 5),
+              questionBank: pool,
+              allowShuffle: false
+            });
+            pool.push(...res.questions);
+          }
+        }
+
+        generated = generateExam(pool, examLength);
+      }
 
       if (generated.length === 0) {
         setExamError(`No questions available for ${activeSubjectFilter}. Please choose "All" subjects or try another filter.`);

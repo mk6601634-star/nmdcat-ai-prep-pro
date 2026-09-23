@@ -53,6 +53,7 @@ import { generateExam } from '../utils/nmdcatExamGenerator';
 import { matchQuestionsFromBank } from '../utils/topicMatcher';
 import { PMDC_SYLLABUS_TOPICS } from '../data/nmdcatData';
 import { fetchPublishedMcqsForTopic, fetchRandomPublishedMcqs } from '../lib/firestoreService';
+import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
 import NMDCAT_CONFIG from '../constants/nmdcatConfig';
 
 interface CustomTestBuilderProps {
@@ -591,90 +592,29 @@ export const CustomTestBuilder: React.FC<CustomTestBuilderProps> = ({
         } catch {}
       }
 
-      // Filter matching questions from sourceBank
-      let pool = (sourceBank || []).filter(q => config.selectedSubjects.includes(q.subject));
-
-      // Filter by chapter or topic if selected
-      if (config.selectedTopics.length > 0 || config.selectedChapters.length > 0) {
-        const topicMatches: MCQQuestion[] = [];
-        for (const t of config.selectedTopics) {
-          topicMatches.push(...matchQuestionsFromBank(pool, { topic: t }));
-        }
-        for (const c of config.selectedChapters) {
-          topicMatches.push(...matchQuestionsFromBank(pool, { chapter: c }));
-        }
-        if (topicMatches.length > 0) {
-          const seen = new Set<string>();
-          const deduped: MCQQuestion[] = [];
-          for (const q of topicMatches) {
-            if (!seen.has(q.id)) {
-              seen.add(q.id);
-              deduped.push(q);
-            }
-          }
-          pool = deduped;
-        }
-      }
-
-      // Remote Firestore fetch fallback if pool has fewer questions than requested
-      if (pool.length < config.questionCount) {
-        try {
-          for (const sub of config.selectedSubjects) {
-            if (config.selectedChapters.length > 0) {
-              for (const chap of config.selectedChapters) {
-                const remote = await fetchPublishedMcqsForTopic(sub, chap, undefined, config.questionCount * 2);
-                if (remote && remote.length > 0) {
-                  pool.push(...(remote as MCQQuestion[]));
-                }
-              }
-            } else {
-              const remote = await fetchRandomPublishedMcqs({ subject: sub, limitCount: config.questionCount * 2 });
-              if (remote && remote.length > 0) {
-                pool.push(...(remote as MCQQuestion[]));
-              }
-            }
-          }
-          // Deduplicate pool
-          const seen = new Set<string>();
-          pool = pool.filter(q => {
-            const id = q.id || q.question;
-            if (seen.has(id)) return false;
-            seen.add(id);
-            return true;
-          });
-        } catch (err) {
-          console.warn('Failed remote fetch in CustomTestBuilder:', err);
-        }
-      }
-
-      // Filter by difficulty if not mixed
-      if (config.difficulty !== 'Mixed') {
-        const diffFiltered = pool.filter(q => q.difficulty === config.difficulty);
-        if (diffFiltered.length > 0) {
-          pool = diffFiltered;
-        }
-      }
-
       // Filter by mistake book if performance filter checked
+      let filterQuestionBank = sourceBank || [];
       if (config.performanceFilters.includes('Mistake Book') && savedMistakes.length > 0) {
         const mistakeQIds = new Set(savedMistakes.map(m => m.questionId));
-        const mistakesPool = (sourceBank || []).filter(q => mistakeQIds.has(q.id));
-        if (mistakesPool.length > 0) {
-          pool = mistakesPool;
-        }
+        filterQuestionBank = filterQuestionBank.filter(q => mistakeQIds.has(q.id));
       }
 
-      // If balanced distribution requested, use centralized generator over the filtered pool
-      let finalQuestions: MCQQuestion[] = [];
-      if (config.randomization.balancedDistribution) {
-        finalQuestions = generateExam(pool, config.questionCount, config.selectedSubjects);
-      } else {
-        finalQuestions = [...pool];
-      }
+      // Retrieve canonical MCQs strictly for selected subjects, chapters, topics, difficulty
+      const retrievalResult = await getCanonicalMCQs({
+        selectedSubjects: config.selectedSubjects,
+        selectedChapters: config.selectedChapters.length > 0 ? config.selectedChapters : undefined,
+        selectedTopics: config.selectedTopics.length > 0 ? config.selectedTopics : undefined,
+        difficulty: config.difficulty !== 'Mixed' ? config.difficulty : undefined,
+        count: config.questionCount,
+        questionBank: filterQuestionBank,
+        allowShuffle: config.randomization.shuffleQuestions
+      });
 
-      if (finalQuestions.length === 0) {
-        // Fallback to any matching questions from sourceBank or pool
-        finalQuestions = pool.length > 0 ? pool : (sourceBank || []).filter(q => config.selectedSubjects.includes(q.subject));
+      let finalQuestions = retrievalResult.questions;
+
+      // If balanced distribution requested and we have multiple subjects, use balanced generator over retrieved pool
+      if (config.randomization.balancedDistribution && config.selectedSubjects.length > 1 && finalQuestions.length > 0) {
+        finalQuestions = generateExam(finalQuestions, config.questionCount, config.selectedSubjects);
       }
 
       if (finalQuestions.length === 0) {

@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { MCQQuestion, SubjectType, SavedMistake } from '../types';
 import { aiFetch, getAiFriendlyMessage, isAiRequestCancelled } from '../lib/aiRequest';
 import { useAiRequestAction } from '../lib/useAiRequestAction';
-import { fetchPublishedMcqsForTopic } from '../lib/firestoreService';
-import { matchQuestionsFromBank } from '../utils/topicMatcher';
+import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
+import { toCanonicalSubjectLabel, assertSubjectIntegrity } from '../utils/subjectTaxonomy';
 import { AiActionStatus } from './AiActionStatus';
 import { FormattedMathContent } from './FormattedMathContent';
 import { 
@@ -20,7 +20,8 @@ import {
   Zap, 
   Languages, 
   Brain,
-  HelpCircle
+  HelpCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 interface PracticeDrillProps {
@@ -50,6 +51,7 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
   const [isDrillCompleted, setIsDrillCompleted] = useState<boolean>(false);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [loadingAiExp, setLoadingAiExp] = useState(false);
+  const [drillErrorMessage, setDrillErrorMessage] = useState<string | null>(null);
   const aiMcqAction = useAiRequestAction();
   const aiExplanationAction = useAiRequestAction();
 
@@ -65,28 +67,36 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
     }
   };
 
-
   const handleStartDrill = async () => {
+    setDrillErrorMessage(null);
+
     if (drillMode === 'bank') {
-      let filtered = matchQuestionsFromBank(questionBank, {
+      // 1. Fetch strictly from Canonical MCQ Retrieval Service
+      const res = await getCanonicalMCQs({
         subject: selectedSubject,
         topic: initialTopic,
-        limit: mcqCount
+        count: mcqCount,
+        questionBank,
+        sourceType: 'DATABASE',
+        allowShuffle: true
       });
-      if (filtered.length === 0) {
-        try {
-          const remote = await fetchPublishedMcqsForTopic(selectedSubject, undefined, initialTopic, mcqCount * 2);
-          if (remote && remote.length > 0) {
-            filtered = remote as MCQQuestion[];
-          }
-        } catch (e) {
-          console.warn('Error loading remote questions for drill:', e);
-        }
-      }
-      const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, mcqCount);
 
-      // Use verified questions for the selected subject
-      setActiveQuestions(shuffled);
+      if (!res.success || res.questions.length === 0) {
+        setDrillErrorMessage(
+          `No database questions currently available for ${selectedSubject}${initialTopic ? ` on topic "${initialTopic}"` : ''}. Please choose another subject or switch to AI Generated mode.`
+        );
+        return;
+      }
+
+      // Hard Invariant Gate: Ensure 100% of questions belong strictly to selectedSubject
+      const strictlyValidated = res.questions.filter(q => assertSubjectIntegrity(q.subject, selectedSubject));
+      
+      if (strictlyValidated.length === 0) {
+        setDrillErrorMessage(`Integrity violation: No valid ${selectedSubject} questions could be verified.`);
+        return;
+      }
+
+      setActiveQuestions(strictlyValidated);
       setCurrentIndex(0);
       setUserAnswers({});
       setIsDrillActive(true);
@@ -118,44 +128,47 @@ export const PracticeDrill: React.FC<PracticeDrillProps> = ({
         );
 
         if (data.mcqs && data.mcqs.length > 0) {
-          setActiveQuestions(data.mcqs);
-          setCurrentIndex(0);
-          setUserAnswers({});
-          setIsDrillActive(true);
-          setIsDrillCompleted(false);
-          setAiExplanation(null);
-        } else {
-          // Fallback to database questions for the selected subject
-          let filtered = matchQuestionsFromBank(questionBank, {
-            subject: selectedSubject,
-            topic: initialTopic,
-            limit: mcqCount
-          });
-          if (filtered.length === 0) {
-            const remote = await fetchPublishedMcqsForTopic(selectedSubject, undefined, initialTopic, mcqCount);
-            if (remote && remote.length > 0) filtered = remote as MCQQuestion[];
+          // Hard Invariant Gate for AI output
+          const verifiedAi = data.mcqs
+            .map(q => ({ ...q, subject: selectedSubject }))
+            .filter(q => assertSubjectIntegrity(q.subject, selectedSubject));
+
+          if (verifiedAi.length > 0) {
+            setActiveQuestions(verifiedAi);
+            setCurrentIndex(0);
+            setUserAnswers({});
+            setIsDrillActive(true);
+            setIsDrillCompleted(false);
+            setAiExplanation(null);
+            return;
           }
-          setActiveQuestions(filtered.slice(0, mcqCount));
-          setIsDrillActive(true);
         }
+
+        // Controlled fallback with strict subject isolation
+        const fallbackRes = await getCanonicalMCQs({
+          subject: selectedSubject,
+          topic: initialTopic,
+          count: mcqCount,
+          questionBank,
+          allowShuffle: true
+        });
+
+        if (fallbackRes.questions.length > 0) {
+          const verified = fallbackRes.questions.filter(q => assertSubjectIntegrity(q.subject, selectedSubject));
+          if (verified.length > 0) {
+            setActiveQuestions(verified);
+            setIsDrillActive(true);
+            return;
+          }
+        }
+
+        setDrillErrorMessage(`Could not generate or retrieve questions for ${selectedSubject}. Please retry.`);
       } catch (err) {
         if (isAiRequestCancelled(err)) {
           setIsDrillActive(false);
           return;
         }
-        if (import.meta.env.DEV) console.error('Error generating AI MCQs:', err);
-        // Fallback to database questions for the selected subject
-        let filtered = matchQuestionsFromBank(questionBank, {
-          subject: selectedSubject,
-          topic: initialTopic,
-          limit: mcqCount
-        });
-        if (filtered.length === 0) {
-          const remote = await fetchPublishedMcqsForTopic(selectedSubject, undefined, initialTopic, mcqCount);
-          if (remote && remote.length > 0) filtered = remote as MCQQuestion[];
-        }
-        setActiveQuestions(filtered.slice(0, mcqCount));
-        setIsDrillActive(true);
+        setDrillErrorMessage(`Failed to start drill for ${selectedSubject}. Please try again.`);
       }
     }
   };

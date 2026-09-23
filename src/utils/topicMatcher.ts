@@ -1,4 +1,5 @@
 import { MCQQuestion, SubjectType } from '../types';
+import { toCanonicalSubjectId, assertSubjectIntegrity } from './subjectTaxonomy';
 
 /**
  * Tokenize string removing punctuation, special characters, and common stop words
@@ -31,6 +32,7 @@ export function calculateTokenScore(queryStr?: string, targetStr?: string): numb
 
 /**
  * Score how well an MCQ matches a given subject, chapter, and topic.
+ * HARD INVARIANT: If subject is specified and does not match, score is strictly 0.
  */
 export function scoreMcqMatch(
   q: MCQQuestion,
@@ -38,9 +40,9 @@ export function scoreMcqMatch(
   chapter?: string,
   topic?: string
 ): number {
-  const normSub = (subject || '').toLowerCase().trim();
-  const qSub = (q.subject || '').toLowerCase().trim();
-  if (normSub && qSub !== normSub) return 0;
+  if (subject && !assertSubjectIntegrity(q.subject, subject)) {
+    return 0; // STRICT REJECT: Foreign subject
+  }
 
   let score = 0;
 
@@ -63,7 +65,7 @@ export function scoreMcqMatch(
   }
 
   // Base score for matching subject
-  if (normSub && qSub === normSub) {
+  if (subject && assertSubjectIntegrity(q.subject, subject)) {
     score += 0.5;
   }
 
@@ -72,6 +74,7 @@ export function scoreMcqMatch(
 
 /**
  * Filter and sort question bank for matching questions with automatic fallback.
+ * STRICT INVARIANT: All returned questions MUST match the requested subject.
  */
 export function matchQuestionsFromBank(
   questionBank: MCQQuestion[],
@@ -87,18 +90,26 @@ export function matchQuestionsFromBank(
 
   const { subject, chapter, topic, difficulty, limit } = options;
 
+  // Pre-filter candidate pool by canonical subject to prevent any cross-subject leakage
+  let candidatePool = questionBank;
+  if (subject) {
+    const targetSubId = toCanonicalSubjectId(subject);
+    candidatePool = questionBank.filter(q => toCanonicalSubjectId(q.subject) === targetSubId);
+  }
+
+  if (candidatePool.length === 0) return [];
+
   // 1. Score each question
-  const scored = questionBank
+  const scored = candidatePool
     .map(q => ({ q, score: scoreMcqMatch(q, subject, chapter, topic) }))
     .filter(item => item.score > 0.5)
     .sort((a, b) => b.score - a.score);
 
   let results = scored.map(item => item.q);
 
-  // 2. Fallback to subject pool if specific chapter/topic score returned too few
-  if (results.length === 0 && subject) {
-    const normSub = subject.toLowerCase().trim();
-    results = questionBank.filter(q => (q.subject || '').toLowerCase().trim() === normSub);
+  // 2. Fallback to candidatePool (which is ALREADY strictly filtered by subject)
+  if (results.length === 0) {
+    results = [...candidatePool];
   }
 
   // 3. Apply difficulty filter if specified and enough questions remain
@@ -113,6 +124,11 @@ export function matchQuestionsFromBank(
 
   if (limit && limit > 0) {
     results = results.slice(0, limit);
+  }
+
+  // Hard Invariant Final Filter
+  if (subject) {
+    results = results.filter(q => assertSubjectIntegrity(q.subject, subject));
   }
 
   return results;

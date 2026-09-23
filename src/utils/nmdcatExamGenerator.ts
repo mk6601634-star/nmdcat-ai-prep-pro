@@ -1,5 +1,6 @@
 import NMDCAT_CONFIG from '../constants/nmdcatConfig.ts';
 import type { MCQQuestion, SubjectType } from '../types.ts';
+import { toCanonicalSubjectId, assertSubjectIntegrity } from './subjectTaxonomy.ts';
 
 function shuffle<T>(arr: T[]) {
   return arr.slice().sort(() => Math.random() - 0.5);
@@ -26,7 +27,6 @@ export function generateExam(
   const sumRaw = raw.reduce((a, b) => a + b, 0);
   if (sumRaw !== totalCount) {
     const diff = totalCount - sumRaw;
-    // add/subtract from largest weight subject
     let idx = 0;
     let maxWeight = -Infinity;
     for (let i = 0; i < subjects.length; i++) {
@@ -36,14 +36,15 @@ export function generateExam(
     raw[idx] = Math.max(0, raw[idx] + diff);
   }
 
-  // Collect questions per subject, preserving official subject allocations.
+  // Collect questions per subject, strictly preserving canonical subject allocations.
   const perSubjectSelected: MCQQuestion[] = [];
   const usedIds = new Set<string>();
 
   // Pass 1: Allocate according to subject ratios
   subjects.forEach((sub, i) => {
     const need = Math.max(0, raw[i]);
-    const pool = questionBank.filter(q => q.subject === sub && !usedIds.has(q.id));
+    const targetSubId = toCanonicalSubjectId(sub);
+    const pool = questionBank.filter(q => toCanonicalSubjectId(q.subject) === targetSubId && !usedIds.has(q.id));
 
     if (pool.length > 0) {
       const chosen = shuffle(pool).slice(0, Math.min(need, pool.length));
@@ -54,12 +55,14 @@ export function generateExam(
     }
   });
 
-  // Pass 2: Backfill deficit from remaining unused pool across available subjects
+  // Pass 2: Backfill deficit ONLY from allowed subjects (never foreign subjects)
+  const targetSubIds = new Set(subjects.map(s => toCanonicalSubjectId(s)).filter(Boolean));
+  const candidatePool = questionBank.filter(
+    q => !usedIds.has(q.id) && targetSubIds.has(toCanonicalSubjectId(q.subject))
+  );
+
   const targetCount = Math.min(totalCount, questionBank.length);
-  if (perSubjectSelected.length < targetCount) {
-    const candidatePool = questionBank.filter(
-      q => !usedIds.has(q.id) && (selectedSubjects && selectedSubjects.length > 0 ? selectedSubjects.includes(q.subject) : true)
-    );
+  if (perSubjectSelected.length < targetCount && candidatePool.length > 0) {
     const deficit = targetCount - perSubjectSelected.length;
     const backfill = shuffle(candidatePool).slice(0, deficit);
     backfill.forEach(q => {
@@ -68,19 +71,11 @@ export function generateExam(
     });
   }
 
-  // If still short due to subject restrictions, backfill from any unused question in the bank
-  if (perSubjectSelected.length < targetCount && !selectedSubjects) {
-    const fallbackPool = questionBank.filter(q => !usedIds.has(q.id));
-    const deficit = targetCount - perSubjectSelected.length;
-    const backfill = shuffle(fallbackPool).slice(0, deficit);
-    backfill.forEach(q => {
-      usedIds.add(q.id);
-      perSubjectSelected.push(q);
-    });
-  }
+  // Final Invariant Gate: Confirm every selected question belongs to an allowed subject
+  const verified = perSubjectSelected.filter(q => targetSubIds.has(toCanonicalSubjectId(q.subject)));
 
   // Final shuffle for exam order
-  return shuffle(perSubjectSelected);
+  return shuffle(verified);
 }
 
 export default generateExam;

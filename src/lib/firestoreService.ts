@@ -65,7 +65,7 @@ export interface UserProfileData {
   updatedAt: string;
 }
 
-const adminCollections = {
+export const adminCollections = {
   mcqs: 'mcqs',
   notes: 'notes',
   flashcards: 'flashcards',
