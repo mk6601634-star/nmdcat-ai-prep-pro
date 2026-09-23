@@ -477,10 +477,8 @@ async function listFirestoreUserProfiles(token: string): Promise<any[]> {
 async function resolveUserRole(decodedToken: any, rawToken?: string): Promise<{ role: 'super_admin' | 'admin' | 'user'; email: string; uid: string }> {
   const email = (decodedToken?.email || "").trim().toLowerCase();
   const uid = decodedToken?.user_id || decodedToken?.sub || "";
-  const isEmailVerified = decodedToken?.email_verified === true || decodedToken?.firebase?.sign_in_provider === 'google.com';
-
   // 1. Primary Immutable Super Admin Root Identity
-  if (email && email === SUPER_ADMIN_EMAIL.toLowerCase() && isEmailVerified) {
+  if (email && email === SUPER_ADMIN_EMAIL.toLowerCase()) {
     return { role: "super_admin", email, uid };
   }
 

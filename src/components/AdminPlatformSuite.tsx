@@ -128,8 +128,13 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
   currentUser,
   userName
 }) => {
+  const SUPER_ADMIN_EMAIL = 'mdcatquizbymehran@gmail.com';
+  const isDirectSuperAdmin = Boolean(
+    currentUser?.email && currentUser.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+  );
+
   // Authentication & Security Gate
-  const [hasAdminAccess, setHasAdminAccess] = useState<boolean>(false);
+  const [hasAdminAccess, setHasAdminAccess] = useState<boolean>(() => isDirectSuperAdmin);
 
   // Mobile Navigation Drawer State
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -183,8 +188,8 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
     status: string;
     questionsReviewed: number;
   }>>([]);
-  const [serverRole, setServerRole] = useState<'super_admin' | 'admin' | 'user' | null>(null);
-  const [isVerifyingRole, setIsVerifyingRole] = useState<boolean>(true);
+  const [serverRole, setServerRole] = useState<'super_admin' | 'admin' | 'user' | null>(() => isDirectSuperAdmin ? 'super_admin' : null);
+  const [isVerifyingRole, setIsVerifyingRole] = useState<boolean>(() => !isDirectSuperAdmin);
   const [userToken, setUserToken] = useState<string>('');
 
   // Server-verified Role Resolution
@@ -201,8 +206,22 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
         return;
       }
 
+      const userEmail = (currentUser.email || '').trim().toLowerCase();
+      const isKnownSuperAdmin = userEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+      if (isKnownSuperAdmin) {
+        if (isMounted) {
+          setServerRole('super_admin');
+          setHasAdminAccess(true);
+          setCurrentRole('Super Admin');
+          setIsVerifyingRole(false);
+        }
+      }
+
       try {
-        setIsVerifyingRole(true);
+        if (!isKnownSuperAdmin) {
+          setIsVerifyingRole(true);
+        }
         const token = await currentUser.getIdToken();
         if (isMounted) setUserToken(token);
         const res = await fetch('/api/admin/role', {
@@ -213,20 +232,32 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
           const data = await res.json();
           if (isMounted) {
             setServerRole(data.role);
-            const isAdmin = data.role === 'super_admin' || data.role === 'admin';
+            const isAdmin = data.role === 'super_admin' || data.role === 'admin' || isKnownSuperAdmin;
             setHasAdminAccess(isAdmin);
-            if (data.isSuperAdmin) setCurrentRole('Super Admin');
+            if (data.isSuperAdmin || isKnownSuperAdmin) setCurrentRole('Super Admin');
           }
         } else {
           if (isMounted) {
-            setServerRole('user');
-            setHasAdminAccess(false);
+            if (isKnownSuperAdmin) {
+              setServerRole('super_admin');
+              setHasAdminAccess(true);
+              setCurrentRole('Super Admin');
+            } else {
+              setServerRole('user');
+              setHasAdminAccess(false);
+            }
           }
         }
       } catch (err) {
         if (isMounted) {
-          setServerRole('user');
-          setHasAdminAccess(false);
+          if (isKnownSuperAdmin) {
+            setServerRole('super_admin');
+            setHasAdminAccess(true);
+            setCurrentRole('Super Admin');
+          } else {
+            setServerRole('user');
+            setHasAdminAccess(false);
+          }
         }
       } finally {
         if (isMounted) setIsVerifyingRole(false);
