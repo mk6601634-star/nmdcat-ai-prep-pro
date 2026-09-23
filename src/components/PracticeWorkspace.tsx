@@ -4,7 +4,6 @@ import { CustomTestBuilder } from './CustomTestBuilder';
 import { MockExam } from './MockExam';
 import TopicQuizBuilder from './TopicQuizBuilder';
 import TopicQuizRunner from './TopicQuizRunner';
-import { PastPaperImporterModal } from './PastPaperImporterModal';
 import { PastPaperRunner } from './PastPaperRunner';
 import UiCard from './UiCard';
 import { 
@@ -18,9 +17,7 @@ import {
 } from '../types';
 import { autoClearPlannerTasks } from '../utils/aiPlanner';
 import { 
-  subscribeToPastPapers, 
-  savePastPaper, 
-  deletePastPaper, 
+  subscribeToPublishedPastPapers, 
   getLocalPastPapers 
 } from '../lib/firestoreService';
 import {
@@ -70,38 +67,16 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
   const [showTopicBuilder, setShowTopicBuilder] = useState(false);
   const [runningQuiz, setRunningQuiz] = useState<{ questions: any[]; source: 'DATABASE' | 'AI'; meta: any } | null>(null);
 
-  // Authentic Past Papers Vault State
-  const [pastPapers, setPastPapers] = useState<PastPaper[]>(() => getLocalPastPapers());
-  const [showImporter, setShowImporter] = useState(false);
+  // Authentic Past Papers Vault State (Global Published Papers)
+  const [pastPapers, setPastPapers] = useState<PastPaper[]>(() => 
+    getLocalPastPapers().filter(p => p.status === 'published' || (p.status as any) === 'PUBLISHED')
+  );
   const [activeRunningPaper, setActiveRunningPaper] = useState<PastPaper | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeToPastPapers(setPastPapers);
+    const unsub = subscribeToPublishedPastPapers(setPastPapers);
     return () => unsub();
   }, []);
-
-  const handleSaveImportedPaper = async (paper: PastPaper) => {
-    const res = await savePastPaper('local_user', paper);
-    if (res.success) {
-      setPastPapers(prev => {
-        const idx = prev.findIndex(p => p.id === paper.id);
-        if (idx >= 0) {
-          const updated = [...prev];
-          updated[idx] = paper;
-          return updated;
-        }
-        return [paper, ...prev];
-      });
-    }
-    return res;
-  };
-
-  const handleDeletePaper = async (paperId: string) => {
-    if (window.confirm('Are you sure you want to remove this authentic past paper from your library?')) {
-      await deletePastPaper(paperId);
-      setPastPapers(prev => prev.filter(p => p.id !== paperId));
-    }
-  };
 
   const handleSavePastPaperAttempt = (attempt: ExamAttempt) => {
     setExamHistory(prev => [attempt, ...prev]);
@@ -246,45 +221,30 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
                     <FileCheck className="w-4 h-4" />
-                    <span>Authentic Past Papers Library</span>
+                    <span>Official Past Papers Vault</span>
                   </div>
-                  <h2 className="text-xl font-bold text-slate-100">Source-Verified NMDCAT Past Papers</h2>
+                  <h2 className="text-xl font-bold text-slate-100">Source-Verified NMDCAT & Provincial Past Papers</h2>
                   <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                    Solve real, imported past papers with authentic question numbering, original option sequence, and verified source provenance.
+                    Solve real, official past papers with authentic question numbering, original option sequence, and verified answer keys.
                   </p>
                 </div>
-
-                <button
-                  onClick={() => setShowImporter(true)}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 shrink-0 shadow-lg shadow-emerald-500/20"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Upload / Import Past Paper</span>
-                </button>
               </div>
 
-              {/* State A: Zero Uploaded Papers */}
+              {/* State A: Zero Published Papers */}
               {pastPapers.length === 0 ? (
-                <div className="p-12 rounded-2xl bg-slate-900/60 border-2 border-dashed border-slate-800 text-center max-w-2xl mx-auto space-y-4">
-                  <div className="w-16 h-16 rounded-2xl bg-slate-800/80 text-emerald-400 flex items-center justify-center mx-auto border border-slate-700">
-                    <FileText className="w-8 h-8 text-slate-400" />
+                <div className="p-12 rounded-3xl bg-slate-900/60 border border-slate-800 text-center max-w-xl mx-auto space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/20">
+                    <FileText className="w-8 h-8" />
                   </div>
-                  <div className="space-y-1">
-                    <h3 className="text-base font-bold text-slate-100">No past papers uploaded yet.</h3>
+                  <div className="space-y-1.5">
+                    <h3 className="text-base font-bold text-white">No Past Papers Published Yet</h3>
                     <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                      A past paper is an authentic source document dataset. Upload an official past-paper file or structured transcript to create your Past Paper library.
+                      Official past papers published by examiners will appear here in real time. Please check back soon or practice with chapter-wise Topic Drills and Mock Exams.
                     </p>
                   </div>
-                  <button
-                    onClick={() => setShowImporter(true)}
-                    className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-emerald-500/20"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Upload Your First Past Paper</span>
-                  </button>
                 </div>
               ) : (
-                /* State B: Genuine Uploaded Papers List */
+                /* State B: Genuine Published Papers List */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {pastPapers.map((paper) => (
                     <div
@@ -293,10 +253,10 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
                     >
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/20">
-                            {paper.verificationStatus}
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                            {paper.examName || 'NMDCAT'} Official
                           </span>
-                          <span className="text-xs text-slate-400 font-mono">
+                          <span className="text-xs text-white font-mono font-bold">
                             {paper.year}
                           </span>
                         </div>
@@ -305,13 +265,16 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
                         
                         <div className="space-y-1 text-xs text-slate-400">
                           <p className="flex items-center gap-1.5">
-                            <span className="text-emerald-400 font-bold">{paper.questionCount}</span> Questions (Original Order)
+                            <span className="text-emerald-400 font-bold">{paper.questionCount}</span> Questions (Original Sequence)
                           </p>
-                          <p className="text-[11px] text-slate-500">
-                            Source: <span className="font-mono text-slate-400">{paper.sourceFileName || 'User Document'}</span>
-                          </p>
+                          {paper.conductingBody && (
+                            <p className="text-[11px] text-slate-500 truncate">
+                              Authority: <span className="font-semibold text-slate-300">{paper.conductingBody}</span>
+                              {paper.conductingUniversity ? ` (${paper.conductingUniversity})` : ''}
+                            </p>
+                          )}
                           <p className="text-[11px]">
-                            Answer Key: <strong className={paper.hasAnswerKey ? 'text-emerald-400' : 'text-amber-400'}>{paper.hasAnswerKey ? 'Available' : 'Unavailable in Source'}</strong>
+                            Answer Key: <strong className={paper.hasAnswerKey ? 'text-emerald-400' : 'text-amber-400'}>{paper.hasAnswerKey ? 'Verified Official Key' : 'Under Review'}</strong>
                           </p>
                         </div>
                       </div>
@@ -319,17 +282,10 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
                       <div className="pt-3 border-t border-slate-800/80 flex items-center gap-2">
                         <button
                           onClick={() => setActiveRunningPaper(paper)}
-                          className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-500/10"
+                          className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-500/10 cursor-pointer"
                         >
-                          <span>Solve Authentic Paper</span>
+                          <span>Solve Official Paper</span>
                           <ArrowRight className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePaper(paper.id)}
-                          className="p-2.5 rounded-xl bg-slate-950 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors"
-                          title="Remove Paper"
-                        >
-                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -337,14 +293,6 @@ export const PracticeWorkspace: React.FC<PracticeWorkspaceProps> = ({
                 </div>
               )}
             </div>
-          )}
-
-          {showImporter && (
-            <PastPaperImporterModal
-              onClose={() => setShowImporter(false)}
-              onSavePaper={handleSaveImportedPaper}
-              existingPapers={pastPapers}
-            />
           )}
         </div>
       )}

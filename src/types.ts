@@ -637,13 +637,19 @@ export interface PastPaper {
   year: number | string;
   examName: string; // e.g. "NMDCAT", "MDCAT", "NUMS", "UHS"
   conductingBody?: string; // e.g. "PMDC", "UHS", "SZABMU", "DUHS", "KMU"
+  conductingUniversity?: string; // e.g. "University of Health Sciences", "Dow University"
+  paperDate?: string; // e.g. "2024-09-22"
   paperVariant?: string; // e.g. "Code A", "Morning Session", "National"
   sourceType: PastPaperSourceType;
   sourceFileId?: string;
   sourceFileName?: string;
   sourceHash?: string; // Content hash for duplicate detection
+  pdfUrl?: string; // Firebase Storage public/download URL for authentic PDF
   uploadedAt: string;
   uploadedBy?: string;
+  status: 'draft' | 'published' | 'archived';
+  publishedAt?: string;
+  publishedBy?: string;
   questionCount: number;
   questions: PastPaperQuestion[];
   hasAnswerKey: boolean;
@@ -651,6 +657,7 @@ export interface PastPaper {
   verificationStatus: PastPaperVerificationStatus;
   timeAllowedMinutes?: number;
   userCompletedCount?: number;
+  tags?: string[];
 }
 
 // ==========================================

@@ -224,6 +224,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // PAST PAPERS: Global published past papers are visible to all students; admin full write/edit/delete/publish
+    match /pastPapers/{docId} {
+      allow read: if resource.data.status in ['published', 'PUBLISHED'] || (isAuthenticated() && isAdminUser());
+      allow write: if isAuthenticated() && isAdminUser();
+
+      match /questions/{questionId} {
+        allow read: if get(/databases/$(database)/documents/pastPapers/$(docId)).data.status in ['published', 'PUBLISHED'] || (isAuthenticated() && isAdminUser());
+        allow write: if isAuthenticated() && isAdminUser();
+      }
+    }
+
     // USER PRESENCE: Heartbeat presence tracking. User can update their own presence doc, Admins can inspect all.
     match /userPresence/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdminUser());

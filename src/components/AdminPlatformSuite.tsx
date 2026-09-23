@@ -57,13 +57,15 @@ import {
   Menu,
   X,
   UserX,
-  Cpu
+  Cpu,
+  FileCheck
 } from 'lucide-react';
 import UiCard from './UiCard';
 import { FormattedMathContent } from './FormattedMathContent';
 import { AiQuizGenerator } from './AiQuizGenerator';
 import { AdminAiModelShifter } from './AdminAiModelShifter';
 import { AdminUserActivityStudio } from './AdminUserActivityStudio';
+import { AdminPastPaperManager } from './AdminPastPaperManager';
 import {
   MCQQuestion,
   SubjectType,
@@ -146,7 +148,7 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
 
   // Primary Module Navigation
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'mcq_manager' | 'notes_manager' | 'flashcard_manager' |
+    'dashboard' | 'past_paper_manager' | 'mcq_manager' | 'notes_manager' | 'flashcard_manager' |
     'vocab_manager' | 'formula_manager' | 'reaction_manager' | 'definition_manager' |
     'mindmap_manager' | 'mnemonic_manager' | 'ai_assistant' | 'ai_quiz_generator' | 'ai_model_shifter' | 'review_queue' |
     'syllabus_manager' | 'user_manager' | 'admin_analytics' |
@@ -972,6 +974,7 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
           <nav className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
             {[
               { id: 'dashboard', label: 'Dashboard Overview', icon: BarChart3 },
+              { id: 'past_paper_manager', label: 'Past Papers Vault', icon: FileCheck, badge: 'Global', badgeColor: 'bg-emerald-500/20 text-emerald-300' },
               { id: 'mcq_manager', label: 'MCQ Manager', icon: CheckSquare, count: mcqList.length },
               { id: 'notes_manager', label: 'Notes Manager', icon: Layers, count: notesList.length },
               { id: 'flashcard_manager', label: 'Flashcard Manager', icon: BookOpen, count: flashcardList.length },
@@ -1169,6 +1172,11 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
                 </div>
               </div>
             </div>
+          )}
+
+          {/* MODULE: PAST PAPERS VAULT & GLOBAL PUBLISHING CMS */}
+          {activeTab === 'past_paper_manager' && (
+            <AdminPastPaperManager currentUser={authenticatedAdmin || currentUser} />
           )}
 
           {/* MODULE 2: MCQ MANAGEMENT SYSTEM */}

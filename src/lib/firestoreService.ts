@@ -2238,7 +2238,11 @@ export function saveLocalPastPapers(papers: PastPaper[]) {
   }
 }
 
-export function subscribeToPastPapers(onUpdate: (papers: PastPaper[]) => void) {
+/**
+ * Subscribe to published past papers for Students (Global)
+ * Strictly filters for status == 'published'
+ */
+export function subscribeToPublishedPastPapers(onUpdate: (papers: PastPaper[]) => void) {
   const collectionRef = collection(db, 'pastPapers');
   const q = query(collectionRef);
 
@@ -2248,67 +2252,104 @@ export function subscribeToPastPapers(onUpdate: (papers: PastPaper[]) => void) {
       const remotePapers: PastPaper[] = [];
       snapshot.forEach((d) => {
         const data = d.data() as any;
-        remotePapers.push({ ...data, id: data.id || d.id });
+        const paper: PastPaper = { ...data, id: data.id || d.id };
+        // Student only sees published papers
+        if (paper.status === 'published' || (paper.status as any) === 'PUBLISHED' || (!paper.status && paper.verificationStatus === 'VERIFIED_OFFICIAL')) {
+          remotePapers.push(paper);
+        }
       });
-      remotePapers.sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''));
-
-      // Sync with local cache
-      const local = getLocalPastPapers();
-      const mergedMap = new Map<string, PastPaper>();
-      remotePapers.forEach((p) => mergedMap.set(p.id, p));
-      local.forEach((p) => {
-        if (!mergedMap.has(p.id)) mergedMap.set(p.id, p);
+      remotePapers.sort((a, b) => {
+        const yearDiff = Number(b.year || 0) - Number(a.year || 0);
+        if (yearDiff !== 0) return yearDiff;
+        return (b.publishedAt || b.uploadedAt || '').localeCompare(a.publishedAt || a.uploadedAt || '');
       });
 
-      const merged = Array.from(mergedMap.values()).sort((a, b) =>
-        (b.uploadedAt || '').localeCompare(a.uploadedAt || '')
-      );
-      saveLocalPastPapers(merged);
-      onUpdate(merged);
+      // Update local cache
+      saveLocalPastPapers(remotePapers);
+      onUpdate(remotePapers);
     },
     (err) => {
-      handleError('Error subscribing to past papers:', err);
-      // Fallback to local cache
+      handleError('Error subscribing to published past papers:', err);
+      // Fallback to cached published papers
+      const cached = getLocalPastPapers().filter(p => p.status === 'published' || (p.status as any) === 'PUBLISHED');
+      onUpdate(cached);
+    }
+  );
+}
+
+/**
+ * Subscribe to all past papers for Admin CMS (Drafts, Published, Archived)
+ */
+export function subscribeToAllPastPapersForAdmin(onUpdate: (papers: PastPaper[]) => void) {
+  const collectionRef = collection(db, 'pastPapers');
+  const q = query(collectionRef);
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const papers: PastPaper[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data() as any;
+        papers.push({ ...data, id: data.id || d.id });
+      });
+      papers.sort((a, b) => {
+        const yearDiff = Number(b.year || 0) - Number(a.year || 0);
+        if (yearDiff !== 0) return yearDiff;
+        return (b.uploadedAt || '').localeCompare(a.uploadedAt || '');
+      });
+      onUpdate(papers);
+    },
+    (err) => {
+      handleError('Error subscribing to admin past papers:', err);
       onUpdate(getLocalPastPapers());
     }
   );
 }
 
-export async function savePastPaper(
-  userId: string,
-  paper: PastPaper
+// Backward-compatible alias
+export const subscribeToPastPapers = subscribeToPublishedPastPapers;
+
+/**
+ * Save / Update a Global Past Paper in Firestore
+ */
+export async function saveGlobalPastPaper(
+  paper: PastPaper,
+  adminUid: string
 ): Promise<{ success: boolean; id: string; duplicate?: boolean; error?: string }> {
   const paperId = paper.id || `past_paper_${Date.now()}`;
   const timestamp = timestampValue();
 
-  // Check duplicate by sourceHash
-  const localPapers = getLocalPastPapers();
-  if (paper.sourceHash) {
-    const existing = localPapers.find((p) => p.sourceHash === paper.sourceHash && p.id !== paperId);
-    if (existing) {
-      return {
-        success: false,
-        id: existing.id,
-        duplicate: true,
-        error: `Duplicate past paper detected. Matching document already exists: "${existing.title}".`
-      };
-    }
-  }
-
   const payload: PastPaper = {
     ...paper,
     id: paperId,
+    status: paper.status || 'draft',
     uploadedAt: paper.uploadedAt || timestamp,
-    uploadedBy: userId || paper.uploadedBy || 'anonymous'
+    uploadedBy: adminUid || paper.uploadedBy || 'admin',
+    publishedAt: paper.status === 'published' ? (paper.publishedAt || timestamp) : paper.publishedAt,
+    publishedBy: paper.status === 'published' ? (paper.publishedBy || adminUid) : paper.publishedBy,
+    questionCount: paper.questions?.length || paper.questionCount || 0
   };
 
   try {
-    if (userId && userId !== 'anonymous') {
-      const docRef = doc(db, 'pastPapers', paperId);
-      await setDoc(docRef, payload, { merge: true });
+    const docRef = doc(db, 'pastPapers', paperId);
+    await setDoc(docRef, payload, { merge: true });
+
+    // Also persist individual questions into subcollection for scalability
+    if (Array.isArray(paper.questions) && paper.questions.length > 0) {
+      try {
+        const batchOps = paper.questions.slice(0, 50).map(async (q, idx) => {
+          const qId = q.id || `q_${idx + 1}`;
+          const qDocRef = doc(db, 'pastPapers', paperId, 'questions', qId);
+          return setDoc(qDocRef, { ...q, pastPaperId: paperId, originalQuestionNumber: q.originalQuestionNumber || idx + 1 }, { merge: true });
+        });
+        await Promise.all(batchOps);
+      } catch (subErr) {
+        console.warn('Subcollection sync error (non-fatal):', subErr);
+      }
     }
 
     // Update local cache
+    const localPapers = getLocalPastPapers();
     const existingIndex = localPapers.findIndex((p) => p.id === paperId);
     if (existingIndex >= 0) {
       localPapers[existingIndex] = payload;
@@ -2319,16 +2360,95 @@ export async function savePastPaper(
 
     return { success: true, id: paperId };
   } catch (err: any) {
-    handleError('Error saving past paper:', err);
-    // Offline local save fallback
-    const existingIndex = localPapers.findIndex((p) => p.id === paperId);
-    if (existingIndex >= 0) {
-      localPapers[existingIndex] = payload;
-    } else {
-      localPapers.unshift(payload);
-    }
-    saveLocalPastPapers(localPapers);
-    return { success: true, id: paperId, error: err?.message };
+    handleError('Error saving global past paper:', err);
+    return { success: false, id: paperId, error: err?.message };
+  }
+}
+
+// Backward-compatible alias
+export async function savePastPaper(
+  userId: string,
+  paper: PastPaper
+): Promise<{ success: boolean; id: string; duplicate?: boolean; error?: string }> {
+  return saveGlobalPastPaper(paper, userId);
+}
+
+/**
+ * Publish a Past Paper globally so students can see and solve it
+ */
+export async function publishPastPaper(
+  paperId: string, 
+  adminUid: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!paperId) return { success: false, error: 'Paper ID is required' };
+  try {
+    const docRef = doc(db, 'pastPapers', paperId);
+    const publishedAt = timestampValue();
+    await updateDoc(docRef, {
+      status: 'published',
+      publishedAt,
+      publishedBy: adminUid || 'admin'
+    });
+    return { success: true };
+  } catch (err: any) {
+    handleError('Error publishing past paper:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Unpublish a Past Paper (revert to draft)
+ */
+export async function unpublishPastPaper(
+  paperId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!paperId) return { success: false, error: 'Paper ID is required' };
+  try {
+    const docRef = doc(db, 'pastPapers', paperId);
+    await updateDoc(docRef, {
+      status: 'draft'
+    });
+    return { success: true };
+  } catch (err: any) {
+    handleError('Error unpublishing past paper:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Archive a Past Paper
+ */
+export async function archivePastPaper(
+  paperId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!paperId) return { success: false, error: 'Paper ID is required' };
+  try {
+    const docRef = doc(db, 'pastPapers', paperId);
+    await updateDoc(docRef, {
+      status: 'archived'
+    });
+    return { success: true };
+  } catch (err: any) {
+    handleError('Error archiving past paper:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Update Past Paper Metadata & Questions
+ */
+export async function updatePastPaperMetadata(
+  paperId: string,
+  updates: Partial<PastPaper>
+): Promise<{ success: boolean; error?: string }> {
+  if (!paperId) return { success: false, error: 'Paper ID is required' };
+  try {
+    const docRef = doc(db, 'pastPapers', paperId);
+    await updateDoc(docRef, updates as any);
+    return { success: true };
+  } catch (err: any) {
+    handleError('Error updating past paper metadata:', err);
+    return { success: false, error: err?.message };
   }
 }
 
@@ -2353,21 +2473,21 @@ export async function deletePastPaper(paperId: string): Promise<{ success: boole
 
 export async function getPastPaperById(paperId: string): Promise<PastPaper | null> {
   if (!paperId) return null;
-  const localPapers = getLocalPastPapers();
-  const local = localPapers.find((p) => p.id === paperId);
-  if (local) return local;
-
   try {
     const docRef = doc(db, 'pastPapers', paperId);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       return snap.data() as PastPaper;
     }
-    return null;
   } catch (err) {
-    handleError('Error getting past paper by ID:', err);
-    return null;
+    handleError('Error getting past paper by ID from remote:', err);
   }
+
+  const localPapers = getLocalPastPapers();
+  const local = localPapers.find((p) => p.id === paperId);
+  if (local) return local;
+
+  return null;
 }
 
 // ------------------

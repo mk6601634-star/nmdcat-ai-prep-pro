@@ -9,6 +9,7 @@ import { activeConfig, MODEL_REGISTRY, usageMetrics } from "./server/aiModelRegi
 import { providersMap } from "./server/aiProviders.ts";
 import type { AIProviderId, AIMode } from "./server/aiTypes.ts";
 import { validateAndEnrichPrismClaim } from "./src/components/prism/prismSuperlativeValidator.ts";
+import pdfParse from "pdf-parse";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -1885,6 +1886,175 @@ app.post("/api/validate-question-bank", requireAdmin, async (req, res) => {
     res.json(report);
   } catch (error: any) {
     return handleAiError(res, error, "Failed to run automated validation script");
+  }
+});
+
+// API Endpoint 6: Automated Admin Past Paper Extraction & Structuring
+app.post("/api/admin/extract-past-paper", requireAdmin, async (req, res) => {
+  try {
+    const { pdfBase64, rawText, paperTitle, examYear, conductingBody, paperVariant } = req.body;
+    let sourceText = rawText || "";
+
+    if (pdfBase64) {
+      const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+      const pdfBuffer = Buffer.from(base64Data, "base64");
+      try {
+        const pdfData = await (pdfParse as any)(pdfBuffer);
+        sourceText = pdfData.text || "";
+      } catch (pdfErr: any) {
+        console.warn("PDF parser error:", pdfErr?.message);
+      }
+    }
+
+    if (!sourceText || !sourceText.trim()) {
+      return res.status(400).json({ error: "No readable text could be extracted from the document." });
+    }
+
+    // Direct JSON check if input is already structured
+    const trimmed = sourceText.trim();
+    if (trimmed.startsWith("[") || (trimmed.startsWith("{") && trimmed.includes("questions"))) {
+      try {
+        const directJson = JSON.parse(trimmed);
+        const questionsList = Array.isArray(directJson) ? directJson : (directJson.questions || directJson.mcqs || []);
+        if (questionsList.length > 0) {
+          const normalized = questionsList.map((q: any, idx: number) => {
+            let options = q.options;
+            if (!Array.isArray(options) || options.length < 2) {
+              options = ["Option A", "Option B", "Option C", "Option D"];
+            }
+            while (options.length < 4) options.push(`Option ${String.fromCharCode(65 + options.length)}`);
+
+            let correctAnswer: number | null = null;
+            let hasOfficialAnswer = false;
+            if (typeof q.correctAnswer === "number" && q.correctAnswer >= 0 && q.correctAnswer <= 3) {
+              correctAnswer = q.correctAnswer;
+              hasOfficialAnswer = true;
+            } else if (typeof q.correctIndex === "number" && q.correctIndex >= 0 && q.correctIndex <= 3) {
+              correctAnswer = q.correctIndex;
+              hasOfficialAnswer = true;
+            } else if (typeof q.correctAnswer === "string" && q.correctAnswer.trim()) {
+              const ca = q.correctAnswer.trim().toUpperCase();
+              const map: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+              if (map[ca] !== undefined) {
+                correctAnswer = map[ca];
+                hasOfficialAnswer = true;
+              }
+            }
+
+            return {
+              id: q.id || `q_${idx + 1}`,
+              pastPaperId: "",
+              originalQuestionNumber: q.originalQuestionNumber || idx + 1,
+              questionText: q.questionText || q.question || `Question ${idx + 1}`,
+              options: options.slice(0, 4),
+              correctAnswer,
+              hasOfficialAnswer,
+              subject: q.subject || "Unknown",
+              topic: q.topic || "",
+              explanation: q.explanation || "",
+              extractionConfidence: 100
+            };
+          });
+
+          return res.json({
+            success: true,
+            questions: normalized,
+            totalExtracted: normalized.length,
+            hasAnswerKey: normalized.some((q: any) => q.hasOfficialAnswer && q.correctAnswer !== null)
+          });
+        }
+      } catch (jsonErr) {
+        // Fallback to AI structured extraction
+      }
+    }
+
+    // Call Gemini with structured prompt for academic past paper extraction
+    const prompt = `You are a Senior Medical Exam Transcriber & PMDC MDCAT Document Extraction Specialist.
+Your task is to extract every question from this authentic past paper into clean, structured Multiple Choice Questions.
+
+Source Context:
+- Paper Title: ${paperTitle || "Past Paper"}
+- Year: ${examYear || "2024"}
+- Examination: ${conductingBody || "PMDC / Provincial MDCAT"}
+- Variant: ${paperVariant || "Official"}
+
+Rules for Extraction:
+1. PRESERVE ORIGINAL QUESTION SEQUENCE: Questions must strictly follow 1, 2, 3... in the exact order found in the document.
+2. EXTRACT FULL TEXT & 4 OPTIONS: Extract the complete question stem and 4 options (A, B, C, D).
+3. DETECT OFFICIAL ANSWER KEYS: If an answer or key is present in the source (e.g., "Answer: C", "Key: B", "Ans (A)"), assign correctAnswer (0 for A, 1 for B, 2 for C, 3 for D) and set hasOfficialAnswer = true. If no answer is provided, set correctAnswer = null and hasOfficialAnswer = false.
+4. CLASSIFY SUBJECT: Categorize each question into: "Biology", "Chemistry", "Physics", "English", or "Logical Reasoning".
+5. DO NOT FABRICATE: Only extract questions that actually exist in the source document text.
+
+Source Text:
+${sourceText.slice(0, 40000)}
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "questions": [
+    {
+      "originalQuestionNumber": 1,
+      "questionText": "Question stem here",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswer": 0,
+      "hasOfficialAnswer": true,
+      "subject": "Biology",
+      "topic": "Cell Structure",
+      "explanation": "Official explanation or reasoning if mentioned in document"
+    }
+  ]
+}`;
+
+    const result = await callWithFallback({
+      prompt,
+      temperature: 0.2,
+      maxTokens: 8192,
+      jsonMode: true
+    });
+
+    const parsed = extractJsonFromText(result.text) || {};
+    const rawQuestions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+
+    const questions = rawQuestions.map((q: any, idx: number) => {
+      let options = Array.isArray(q.options) ? q.options : ["Option A", "Option B", "Option C", "Option D"];
+      while (options.length < 4) options.push(`Option ${String.fromCharCode(65 + options.length)}`);
+
+      let correctAnswer: number | null = null;
+      let hasOfficialAnswer = Boolean(q.hasOfficialAnswer);
+      if (typeof q.correctAnswer === "number" && q.correctAnswer >= 0 && q.correctAnswer <= 3) {
+        correctAnswer = q.correctAnswer;
+        hasOfficialAnswer = true;
+      } else if (typeof q.correctAnswer === "string" && q.correctAnswer.trim()) {
+        const ca = q.correctAnswer.trim().toUpperCase();
+        const map: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+        if (map[ca] !== undefined) {
+          correctAnswer = map[ca];
+          hasOfficialAnswer = true;
+        }
+      }
+
+      return {
+        id: `q_${q.originalQuestionNumber || idx + 1}`,
+        pastPaperId: "",
+        originalQuestionNumber: q.originalQuestionNumber || idx + 1,
+        questionText: q.questionText || `Question ${idx + 1}`,
+        options: options.slice(0, 4),
+        correctAnswer,
+        hasOfficialAnswer,
+        subject: q.subject || "Unknown",
+        topic: q.topic || "",
+        explanation: q.explanation || "",
+        extractionConfidence: 98
+      };
+    });
+
+    res.json({
+      success: true,
+      questions,
+      totalExtracted: questions.length,
+      hasAnswerKey: questions.some((q: any) => q.hasOfficialAnswer && q.correctAnswer !== null)
+    });
+  } catch (error: any) {
+    return handleAiError(res, error, "Failed to extract past paper questions from document");
   }
 });
 
