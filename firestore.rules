@@ -217,5 +217,18 @@ service cloud.firestore {
     match /importJobs/{docId} {
       allow read, write: if isAuthenticated() && isAdminUser();
     }
+
+    // AUTH LOGIN EVENTS: Immutable audit log. Only verified admins can read. Client writes forbidden (server writes only).
+    match /authLoginEvents/{docId} {
+      allow read: if isAuthenticated() && isAdminUser();
+      allow write: if false;
+    }
+
+    // USER PRESENCE: Heartbeat presence tracking. User can update their own presence doc, Admins can inspect all.
+    match /userPresence/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdminUser());
+      allow write: if isAuthenticated() && request.auth.uid == uid;
+    }
   }
 }
+

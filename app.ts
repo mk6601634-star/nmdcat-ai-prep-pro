@@ -265,6 +265,213 @@ async function listFirestoreAdmins(token: string): Promise<any[]> {
   }
 }
 
+// Presence threshold: 2 minutes (120,000 ms)
+const ONLINE_PRESENCE_THRESHOLD_MS = 2 * 60 * 1000;
+
+// Helper: Append a login audit event to /authLoginEvents collection
+async function recordFirestoreLoginEvent(eventData: {
+  uid: string;
+  email: string;
+  displayName: string;
+  provider: string;
+  loginMethod: string;
+  loginAt: string;
+  success: boolean;
+  sessionId?: string;
+  platform?: string;
+  userAgentCategory?: string;
+  appVersion?: string;
+}, token: string): Promise<boolean> {
+  if (!eventData?.uid || !token) return false;
+  try {
+    const eventId = `log_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/authLoginEvents/${eventId}`;
+    
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          id: { stringValue: eventId },
+          uid: { stringValue: eventData.uid },
+          email: { stringValue: eventData.email || '' },
+          displayName: { stringValue: eventData.displayName || '' },
+          provider: { stringValue: eventData.provider || 'unknown' },
+          loginMethod: { stringValue: eventData.loginMethod || 'popup' },
+          loginAt: { stringValue: eventData.loginAt || new Date().toISOString() },
+          success: { booleanValue: eventData.success !== false },
+          sessionId: { stringValue: eventData.sessionId || '' },
+          platform: { stringValue: eventData.platform || 'web' },
+          userAgentCategory: { stringValue: eventData.userAgentCategory || 'Browser' },
+          appVersion: { stringValue: eventData.appVersion || '1.0.0' }
+        }
+      })
+    });
+
+    return res.status === 200;
+  } catch (err) {
+    console.error("[LoginAudit] Error writing login event:", err);
+    return false;
+  }
+}
+
+// Helper: Update presence in /userPresence/{uid}
+async function updateFirestorePresence(presenceData: {
+  uid: string;
+  email: string;
+  displayName?: string;
+  status: 'online' | 'offline' | 'idle';
+  lastSeenAt: string;
+  sessionStartedAt?: string;
+  platform?: string;
+}, token: string): Promise<boolean> {
+  if (!presenceData?.uid || !token) return false;
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/userPresence/${presenceData.uid}`;
+    
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          uid: { stringValue: presenceData.uid },
+          email: { stringValue: presenceData.email || '' },
+          displayName: { stringValue: presenceData.displayName || '' },
+          status: { stringValue: presenceData.status || 'online' },
+          lastSeenAt: { stringValue: presenceData.lastSeenAt || new Date().toISOString() },
+          sessionStartedAt: { stringValue: presenceData.sessionStartedAt || new Date().toISOString() },
+          platform: { stringValue: presenceData.platform || 'web' }
+        }
+      })
+    });
+
+    return res.status === 200;
+  } catch (err) {
+    console.error("[Presence] Error updating presence:", err);
+    return false;
+  }
+}
+
+// Helper: Query all presence records
+async function listFirestorePresence(token: string): Promise<any[]> {
+  if (!token) return [];
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/userPresence?pageSize=300`;
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (res.status === 200) {
+      const data = await res.json();
+      if (data.documents && Array.isArray(data.documents)) {
+        return data.documents.map((d: any) => {
+          const f = d.fields || {};
+          const uid = f.uid?.stringValue || d.name.split('/').pop();
+          const lastSeenAt = f.lastSeenAt?.stringValue || '';
+          const lastSeenTime = new Date(lastSeenAt).getTime();
+          const isCurrentlyOnline = !isNaN(lastSeenTime) && (Date.now() - lastSeenTime <= ONLINE_PRESENCE_THRESHOLD_MS);
+
+          return {
+            uid,
+            email: f.email?.stringValue || '',
+            displayName: f.displayName?.stringValue || '',
+            status: isCurrentlyOnline ? 'online' : (f.status?.stringValue || 'offline'),
+            isOnline: isCurrentlyOnline,
+            lastSeenAt,
+            sessionStartedAt: f.sessionStartedAt?.stringValue || '',
+            platform: f.platform?.stringValue || 'web'
+          };
+        });
+      }
+    }
+    return [];
+  } catch (err) {
+    console.warn("[Presence] Warning listing presence records:", err);
+    return [];
+  }
+}
+
+// Helper: Query login events
+async function listFirestoreLoginEvents(token: string, pageSize: number = 100): Promise<any[]> {
+  if (!token) return [];
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/authLoginEvents?pageSize=${pageSize}`;
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (res.status === 200) {
+      const data = await res.json();
+      if (data.documents && Array.isArray(data.documents)) {
+        const events = data.documents.map((d: any) => {
+          const f = d.fields || {};
+          return {
+            id: f.id?.stringValue || d.name.split('/').pop(),
+            uid: f.uid?.stringValue || '',
+            email: f.email?.stringValue || '',
+            displayName: f.displayName?.stringValue || '',
+            provider: f.provider?.stringValue || 'unknown',
+            loginMethod: f.loginMethod?.stringValue || 'popup',
+            loginAt: f.loginAt?.stringValue || '',
+            success: f.success?.booleanValue ?? true,
+            sessionId: f.sessionId?.stringValue || '',
+            platform: f.platform?.stringValue || 'web',
+            userAgentCategory: f.userAgentCategory?.stringValue || 'Browser',
+            appVersion: f.appVersion?.stringValue || '1.0.0'
+          };
+        });
+        // Sort newest first
+        events.sort((a: any, b: any) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime());
+        return events;
+      }
+    }
+    return [];
+  } catch (err) {
+    console.warn("[LoginAudit] Warning listing login events:", err);
+    return [];
+  }
+}
+
+// Helper: Query registered user profiles from Firestore /users
+async function listFirestoreUserProfiles(token: string): Promise<any[]> {
+  if (!token) return [];
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/users?pageSize=300`;
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (res.status === 200) {
+      const data = await res.json();
+      if (data.documents && Array.isArray(data.documents)) {
+        return data.documents.map((d: any) => {
+          const f = d.fields || {};
+          const uid = d.name.split('/').pop();
+          return {
+            uid,
+            email: f.email?.stringValue || '',
+            displayName: f.userName?.stringValue || f.displayName?.stringValue || '',
+            examDate: f.examDate?.stringValue || '',
+            targetScore: f.targetScore?.integerValue ? parseInt(f.targetScore.integerValue, 10) : undefined,
+            updatedAt: f.updatedAt?.stringValue || '',
+            role: f.role?.stringValue || 'user'
+          };
+        });
+      }
+    }
+    return [];
+  } catch (err) {
+    console.warn("[UserProfiles] Warning listing user profiles:", err);
+    return [];
+  }
+}
+
 // Durable Role Resolution Engine
 async function resolveUserRole(decodedToken: any, rawToken?: string): Promise<{ role: 'super_admin' | 'admin' | 'user'; email: string; uid: string }> {
   const email = (decodedToken?.email || "").trim().toLowerCase();
@@ -329,30 +536,304 @@ app.get("/api/admin/role", async (req: any, res: any) => {
   });
 });
 
-// GET /api/admin/users: List all administrators from Firestore (Requires Admin)
+// POST /api/auth/record-login: Record a verified login session event (Authenticated users only)
+app.post("/api/auth/record-login", async (req: any, res: any) => {
+  try {
+    const { sessionId, loginMethod, platform, userAgentCategory, appVersion } = req.body || {};
+    const uid = req.user.user_id || req.user.sub || req.userId;
+    const email = req.user.email || "";
+    const displayName = req.user.name || (email ? email.split('@')[0] : 'NMDCAT Student');
+    const provider = req.user.firebase?.sign_in_provider || (email ? 'google.com' : 'anonymous');
+    const loginAt = new Date().toISOString();
+
+    if (!uid) {
+      return res.status(400).json({ error: "Missing authenticated user ID" });
+    }
+
+    // Record login event asynchronously (does not block authentication)
+    recordFirestoreLoginEvent({
+      uid,
+      email,
+      displayName,
+      provider,
+      loginMethod: loginMethod || 'popup',
+      loginAt,
+      success: true,
+      sessionId: sessionId || '',
+      platform: platform || 'web',
+      userAgentCategory: userAgentCategory || 'Desktop Browser',
+      appVersion: appVersion || '1.0.0'
+    }, req.rawToken).catch(err => {
+      console.warn("[LoginAudit] Background login recording warning:", err);
+    });
+
+    // Update presence to online
+    updateFirestorePresence({
+      uid,
+      email,
+      displayName,
+      status: 'online',
+      lastSeenAt: loginAt,
+      sessionStartedAt: loginAt,
+      platform: platform || 'web'
+    }, req.rawToken).catch(err => {
+      console.warn("[Presence] Background presence update warning:", err);
+    });
+
+    res.json({
+      success: true,
+      recordedAt: loginAt,
+      uid
+    });
+  } catch (err: any) {
+    console.error("[LoginRecord] Error handling record-login:", err);
+    res.status(500).json({ error: "Failed to record login", details: err?.message });
+  }
+});
+
+// POST /api/user/heartbeat: Lightweight user presence heartbeat (Authenticated users only)
+app.post("/api/user/heartbeat", async (req: any, res: any) => {
+  try {
+    const { status, platform, sessionStartedAt } = req.body || {};
+    const uid = req.user.user_id || req.user.sub || req.userId;
+    const email = req.user.email || "";
+    const displayName = req.user.name || (email ? email.split('@')[0] : 'NMDCAT Student');
+    const now = new Date().toISOString();
+
+    if (!uid) {
+      return res.status(400).json({ error: "Missing authenticated user ID" });
+    }
+
+    await updateFirestorePresence({
+      uid,
+      email,
+      displayName,
+      status: status === 'offline' ? 'offline' : 'online',
+      lastSeenAt: now,
+      sessionStartedAt: sessionStartedAt || now,
+      platform: platform || 'web'
+    }, req.rawToken);
+
+    res.json({
+      success: true,
+      lastSeenAt: now,
+      status: status === 'offline' ? 'offline' : 'online'
+    });
+  } catch (err: any) {
+    console.warn("[Heartbeat] Error processing presence heartbeat:", err);
+    res.status(500).json({ error: "Failed to update presence", details: err?.message });
+  }
+});
+
+// GET /api/admin/users: Complete User Directory (Requires Admin)
+// Returns all registered/known users, merging admin roles, user profiles, and presence
 app.get("/api/admin/users", requireAdmin, async (req: any, res: any) => {
-  const firestoreAdmins = await listFirestoreAdmins(req.rawToken);
+  try {
+    const [firestoreAdmins, userProfiles, presenceList, loginEvents] = await Promise.all([
+      listFirestoreAdmins(req.rawToken),
+      listFirestoreUserProfiles(req.rawToken),
+      listFirestorePresence(req.rawToken),
+      listFirestoreLoginEvents(req.rawToken, 300)
+    ]);
 
-  // Ensure root Super Admin is always present and active at top
-  const superAdminEntry = {
-    id: "super_admin",
-    uid: "super_admin",
-    email: SUPER_ADMIN_EMAIL,
-    name: "Mehran Khan (Super Admin)",
-    role: "Super Admin",
-    status: "Active",
-    createdAt: "2026-09-20T00:00:00.000Z",
-    createdBy: "system"
-  };
+    const presenceMap = new Map<string, any>();
+    presenceList.forEach(p => presenceMap.set(p.uid, p));
 
-  const secondaryAdmins = firestoreAdmins.filter(
-    (a: any) => a.email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()
-  );
+    const loginMap = new Map<string, any>();
+    loginEvents.forEach(e => {
+      if (!loginMap.has(e.uid) || new Date(e.loginAt).getTime() > new Date(loginMap.get(e.uid).loginAt).getTime()) {
+        loginMap.set(e.uid, e);
+      }
+    });
 
-  res.json({
-    success: true,
-    users: [superAdminEntry, ...secondaryAdmins]
-  });
+    const adminEmailSet = new Set<string>();
+    const adminUidSet = new Set<string>();
+    firestoreAdmins.forEach(a => {
+      if (a.email) adminEmailSet.add(a.email.toLowerCase());
+      if (a.uid) adminUidSet.add(a.uid);
+    });
+
+    // Map all unique user entities
+    const userMap = new Map<string, any>();
+
+    // 1. Root Super Admin
+    userMap.set("super_admin", {
+      id: "super_admin",
+      uid: "super_admin",
+      email: SUPER_ADMIN_EMAIL,
+      displayName: "Mehran Khan (Super Admin)",
+      name: "Mehran Khan (Super Admin)",
+      role: "super_admin",
+      emailVerified: true,
+      disabled: false,
+      providers: ["google.com"],
+      createdAt: "2026-09-20T00:00:00.000Z",
+      lastSignInTime: loginMap.get("super_admin")?.loginAt || "2026-09-23T18:00:00.000Z",
+      status: "Active",
+      isOnline: presenceMap.get("super_admin")?.isOnline ?? true,
+      lastSeenAt: presenceMap.get("super_admin")?.lastSeenAt || new Date().toISOString()
+    });
+
+    // 2. Secondary Admins
+    firestoreAdmins.forEach(a => {
+      if (a.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) return;
+      const presence = presenceMap.get(a.uid);
+      const latestLogin = loginMap.get(a.uid);
+      userMap.set(a.uid, {
+        id: a.uid,
+        uid: a.uid,
+        email: a.email,
+        displayName: a.name || a.displayName || a.email.split('@')[0],
+        name: a.name || a.displayName || a.email.split('@')[0],
+        role: a.role === 'Super Admin' ? 'super_admin' : 'admin',
+        emailVerified: true,
+        disabled: a.status === 'Revoked',
+        providers: ["google.com"],
+        createdAt: a.createdAt || "2026-09-21T00:00:00.000Z",
+        lastSignInTime: latestLogin?.loginAt || a.updatedAt || a.createdAt || "2026-09-21T00:00:00.000Z",
+        status: a.status || "Active",
+        isOnline: presence?.isOnline ?? false,
+        lastSeenAt: presence?.lastSeenAt
+      });
+    });
+
+    // 3. User Profiles from Firestore
+    userProfiles.forEach(p => {
+      if (!userMap.has(p.uid)) {
+        const presence = presenceMap.get(p.uid);
+        const latestLogin = loginMap.get(p.uid);
+        const isAdmin = adminUidSet.has(p.uid) || (p.email && adminEmailSet.has(p.email.toLowerCase()));
+        
+        userMap.set(p.uid, {
+          id: p.uid,
+          uid: p.uid,
+          email: p.email || '',
+          displayName: p.displayName || (p.email ? p.email.split('@')[0] : 'NMDCAT Student'),
+          name: p.displayName || (p.email ? p.email.split('@')[0] : 'NMDCAT Student'),
+          role: isAdmin ? 'admin' : (p.role || 'user'),
+          emailVerified: !!p.email,
+          disabled: false,
+          providers: p.email ? ["google.com"] : ["anonymous"],
+          createdAt: p.updatedAt || "2026-09-22T00:00:00.000Z",
+          lastSignInTime: latestLogin?.loginAt || p.updatedAt || "2026-09-22T00:00:00.000Z",
+          status: "Active",
+          isOnline: presence?.isOnline ?? false,
+          lastSeenAt: presence?.lastSeenAt
+        });
+      }
+    });
+
+    // 4. Presence-only users
+    presenceList.forEach(pr => {
+      if (!userMap.has(pr.uid)) {
+        const latestLogin = loginMap.get(pr.uid);
+        const isAdmin = adminUidSet.has(pr.uid) || (pr.email && adminEmailSet.has(pr.email.toLowerCase()));
+        userMap.set(pr.uid, {
+          id: pr.uid,
+          uid: pr.uid,
+          email: pr.email || '',
+          displayName: pr.displayName || (pr.email ? pr.email.split('@')[0] : 'NMDCAT Student'),
+          name: pr.displayName || (pr.email ? pr.email.split('@')[0] : 'NMDCAT Student'),
+          role: isAdmin ? 'admin' : 'user',
+          emailVerified: !!pr.email,
+          disabled: false,
+          providers: pr.email ? ["google.com"] : ["anonymous"],
+          createdAt: pr.sessionStartedAt || "2026-09-23T00:00:00.000Z",
+          lastSignInTime: latestLogin?.loginAt || pr.sessionStartedAt || "2026-09-23T00:00:00.000Z",
+          status: "Active",
+          isOnline: pr.isOnline,
+          lastSeenAt: pr.lastSeenAt
+        });
+      }
+    });
+
+    const allUsers = Array.from(userMap.values());
+    // Sort super_admin first, then online users, then newest sign-in
+    allUsers.sort((a, b) => {
+      if (a.role === 'super_admin') return -1;
+      if (b.role === 'super_admin') return 1;
+      if (a.isOnline && !b.isOnline) return -1;
+      if (!a.isOnline && b.isOnline) return 1;
+      return new Date(b.lastSignInTime || 0).getTime() - new Date(a.lastSignInTime || 0).getTime();
+    });
+
+    res.json({
+      success: true,
+      totalCount: allUsers.length,
+      users: allUsers
+    });
+  } catch (err: any) {
+    console.error("[AdminUsers] Error loading user directory:", err);
+    res.status(500).json({ error: "Failed to list user directory", details: err?.message });
+  }
+});
+
+// GET /api/admin/login-events: Query historical login audit events (Requires Admin)
+app.get("/api/admin/login-events", requireAdmin, async (req: any, res: any) => {
+  try {
+    const limitParam = parseInt(req.query.limit as string, 10) || 100;
+    const events = await listFirestoreLoginEvents(req.rawToken, limitParam);
+    res.json({
+      success: true,
+      count: events.length,
+      events
+    });
+  } catch (err: any) {
+    console.error("[AdminLoginEvents] Error fetching login events:", err);
+    res.status(500).json({ error: "Failed to fetch login events", details: err?.message });
+  }
+});
+
+// GET /api/admin/presence: List real-time online & recently active users (Requires Admin)
+app.get("/api/admin/presence", requireAdmin, async (req: any, res: any) => {
+  try {
+    const presenceRecords = await listFirestorePresence(req.rawToken);
+    const onlineUsers = presenceRecords.filter(p => p.isOnline);
+    const recentlyActiveUsers = presenceRecords.filter(p => !p.isOnline);
+
+    res.json({
+      success: true,
+      onlineCount: onlineUsers.length,
+      totalTracked: presenceRecords.length,
+      onlineUsers,
+      recentlyActiveUsers
+    });
+  } catch (err: any) {
+    console.error("[AdminPresence] Error fetching presence:", err);
+    res.status(500).json({ error: "Failed to fetch presence data", details: err?.message });
+  }
+});
+
+// GET /api/admin/users/:uid/activity: User Detail & Login Activity Profile (Requires Admin)
+app.get("/api/admin/users/:uid/activity", requireAdmin, async (req: any, res: any) => {
+  try {
+    const targetUid = req.params.uid;
+    if (!targetUid) {
+      return res.status(400).json({ error: "User ID parameter required" });
+    }
+
+    const [allEvents, presenceList, firestoreAdmins] = await Promise.all([
+      listFirestoreLoginEvents(req.rawToken, 200),
+      listFirestorePresence(req.rawToken),
+      listFirestoreAdmins(req.rawToken)
+    ]);
+
+    const userEvents = allEvents.filter(e => e.uid === targetUid);
+    const userPresence = presenceList.find(p => p.uid === targetUid) || null;
+    const adminDoc = firestoreAdmins.find(a => a.uid === targetUid);
+
+    res.json({
+      success: true,
+      uid: targetUid,
+      role: targetUid === "super_admin" ? "super_admin" : (adminDoc?.role === 'super_admin' ? 'super_admin' : (adminDoc ? 'admin' : 'user')),
+      presence: userPresence,
+      recentLogins: userEvents.slice(0, 20),
+      totalLoginEvents: userEvents.length
+    });
+  } catch (err: any) {
+    console.error("[AdminUserActivity] Error fetching user activity:", err);
+    res.status(500).json({ error: "Failed to fetch user activity", details: err?.message });
+  }
 });
 
 // POST /api/admin/assign-role: Add or assign admin role in Firestore (Requires Super Admin)

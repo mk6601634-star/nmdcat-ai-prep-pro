@@ -653,4 +653,49 @@ export interface PastPaper {
   userCompletedCount?: number;
 }
 
+// ==========================================
+// USER DIRECTORY, LOGIN AUDIT & PRESENCE TYPES
+// ==========================================
+
+export interface AuthUserSummary {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+  emailVerified: boolean;
+  disabled: boolean;
+  providers: string[];
+  role: 'super_admin' | 'admin' | 'user';
+  createdAt: string;
+  lastSignInTime: string;
+  lastSeenAt?: string;
+  isOnline?: boolean;
+}
+
+export interface AuthLoginEvent {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  provider: string;
+  loginMethod: string;
+  loginAt: string;
+  success: boolean;
+  sessionId?: string;
+  platform?: string;
+  userAgentCategory?: string;
+  appVersion?: string;
+}
+
+export interface UserPresenceRecord {
+  uid: string;
+  email: string;
+  displayName?: string;
+  status: 'online' | 'offline' | 'idle';
+  lastSeenAt: string;
+  sessionStartedAt: string;
+  platform?: string;
+}
+
+
 

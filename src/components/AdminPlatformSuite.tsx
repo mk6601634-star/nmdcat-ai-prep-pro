@@ -63,6 +63,7 @@ import UiCard from './UiCard';
 import { FormattedMathContent } from './FormattedMathContent';
 import { AiQuizGenerator } from './AiQuizGenerator';
 import { AdminAiModelShifter } from './AdminAiModelShifter';
+import { AdminUserActivityStudio } from './AdminUserActivityStudio';
 import {
   MCQQuestion,
   SubjectType,
@@ -182,6 +183,7 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
   }>>([]);
   const [serverRole, setServerRole] = useState<'super_admin' | 'admin' | 'user' | null>(null);
   const [isVerifyingRole, setIsVerifyingRole] = useState<boolean>(true);
+  const [userToken, setUserToken] = useState<string>('');
 
   // Server-verified Role Resolution
   useEffect(() => {
@@ -192,6 +194,7 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
           setServerRole(null);
           setHasAdminAccess(false);
           setIsVerifyingRole(false);
+          setUserToken('');
         }
         return;
       }
@@ -199,6 +202,7 @@ export const AdminPlatformSuite: React.FC<AdminPlatformSuiteProps> = ({
       try {
         setIsVerifyingRole(true);
         const token = await currentUser.getIdToken();
+        if (isMounted) setUserToken(token);
         const res = await fetch('/api/admin/role', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -1909,138 +1913,147 @@ Physics,Circular Motion,Centripetal Force,When a body moves along a circular pat
             </div>
           )}
 
-          {/* MODULE 10: USER MANAGEMENT */}
+          {/* MODULE 10: USER MANAGEMENT & LIVE ACTIVITY */}
           {activeTab === 'user_manager' && (
-            <div className="bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-800 space-y-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                <div>
-                  <h3 className="font-bold text-white text-base">Administrative User & Role Access Control</h3>
-                  <p className="text-xs text-slate-400">Manage server-verified administrator privileges and reviewer accounts.</p>
-                </div>
-                {serverRole === 'super_admin' ? (
-                  <button
-                    onClick={async () => {
-                      const name = prompt('Enter administrator full name:');
-                      const email = prompt('Enter admin email address:');
-                      if (!name || !email) return;
-                      try {
-                        const token = await currentUser?.getIdToken();
-                        const res = await fetch('/api/admin/assign-role', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                          },
-                          body: JSON.stringify({
-                            targetEmail: email,
-                            displayName: name,
-                            role: 'admin'
-                          })
-                        });
-                        const data = await res.json();
-                        if (res.ok) {
-                          alert(`Success: ${data.message}`);
-                          refreshAdminUsers();
-                        } else {
-                          alert(`Error: ${data.error || 'Failed to assign role'}`);
+            <div className="space-y-8">
+              {/* Central User Directory, Live Presence & Login Audit History */}
+              <AdminUserActivityStudio
+                currentUserToken={userToken}
+                serverRole={serverRole}
+              />
+
+              {/* Administrator Role Assignment & Super Admin Control Panel */}
+              <div className="bg-slate-900 p-4 sm:p-6 rounded-3xl border border-slate-800 space-y-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="font-bold text-white text-base">Administrative User & Role Access Control</h3>
+                    <p className="text-xs text-slate-400">Manage server-verified administrator privileges and reviewer accounts.</p>
+                  </div>
+                  {serverRole === 'super_admin' ? (
+                    <button
+                      onClick={async () => {
+                        const name = prompt('Enter administrator full name:');
+                        const email = prompt('Enter admin email address:');
+                        if (!name || !email) return;
+                        try {
+                          const token = await currentUser?.getIdToken();
+                          const res = await fetch('/api/admin/assign-role', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({
+                              targetEmail: email,
+                              displayName: name,
+                              role: 'admin'
+                            })
+                          });
+                          const data = await res.json();
+                          if (res.ok) {
+                            alert(`Success: ${data.message}`);
+                            refreshAdminUsers();
+                          } else {
+                            alert(`Error: ${data.error || 'Failed to assign role'}`);
+                          }
+                        } catch (err: any) {
+                          alert(`Request error: ${err.message}`);
                         }
-                      } catch (err: any) {
-                        alert(`Request error: ${err.message}`);
-                      }
-                    }}
-                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Add Admin User</span>
-                  </button>
+                      }}
+                      className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Admin User</span>
+                    </button>
+                  ) : (
+                    <div className="text-[11px] bg-slate-800 text-slate-400 px-3 py-1.5 rounded-xl border border-slate-700">
+                      Admin Management Restricted to Super Admin
+                    </div>
+                  )}
+                </div>
+
+                {adminUsers.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+                      <UserX className="w-6 h-6" />
+                    </div>
+                    <h4 className="font-bold text-white text-sm">No administrators found</h4>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      No authorized admin accounts are currently registered.
+                    </p>
+                  </div>
                 ) : (
-                  <div className="text-[11px] bg-slate-800 text-slate-400 px-3 py-1.5 rounded-xl border border-slate-700">
-                    Admin Management Restricted to Super Admin
+                  <div className="space-y-3 text-xs">
+                    {adminUsers.map(user => {
+                      const isSuperAdminUser = user.email?.toLowerCase() === 'mdcatquizbymehran@gmail.com' || user.role === 'Super Admin';
+                      return (
+                        <div key={user.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-9 h-9 rounded-full font-bold flex items-center justify-center shrink-0 ${
+                              isSuperAdminUser ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-cyan-300'
+                            }`}>
+                              {user.name ? user.name.slice(0, 2).toUpperCase() : 'AD'}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-bold text-white block text-sm truncate">{user.name}</span>
+                              <span className="text-slate-400 block truncate">{user.email}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className={`font-bold px-2.5 py-1 rounded-lg border text-xs ${
+                              isSuperAdminUser 
+                                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' 
+                                : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+                            }`}>
+                              {user.role}
+                            </span>
+                            <span className="text-[10px] bg-slate-800 text-cyan-300 px-2 py-0.5 rounded font-bold">{user.status}</span>
+                            
+                            {serverRole === 'super_admin' && !isSuperAdminUser && (
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`Are you sure you want to revoke admin privileges from ${user.email}?`)) return;
+                                  try {
+                                    const token = await currentUser?.getIdToken();
+                                    const res = await fetch('/api/admin/revoke-role', {
+                                      method: 'POST',
+                                      headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': `Bearer ${token}`
+                                      },
+                                      body: JSON.stringify({
+                                        targetEmail: user.email,
+                                        targetUid: user.id
+                                      })
+                                    });
+                                    const data = await res.json();
+                                    if (res.ok) {
+                                      alert(`Success: ${data.message}`);
+                                      refreshAdminUsers();
+                                    } else {
+                                      alert(`Error: ${data.error || 'Failed to revoke role'}`);
+                                    }
+                                  } catch (err: any) {
+                                    alert(`Request error: ${err.message}`);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
+                                title="Revoke Admin Access"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {isSuperAdminUser && (
+                              <span className="text-[10px] text-amber-400/80 font-medium">Permanent</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-
-              {adminUsers.length === 0 ? (
-                <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
-                    <UserX className="w-6 h-6" />
-                  </div>
-                  <h4 className="font-bold text-white text-sm">No administrators found</h4>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    No authorized admin accounts are currently registered.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3 text-xs">
-                  {adminUsers.map(user => {
-                    const isSuperAdminUser = user.email?.toLowerCase() === 'mdcatquizbymehran@gmail.com' || user.role === 'Super Admin';
-                    return (
-                      <div key={user.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-9 h-9 rounded-full font-bold flex items-center justify-center shrink-0 ${
-                            isSuperAdminUser ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-cyan-300'
-                          }`}>
-                            {user.name ? user.name.slice(0, 2).toUpperCase() : 'AD'}
-                          </div>
-                          <div className="min-w-0">
-                            <span className="font-bold text-white block text-sm truncate">{user.name}</span>
-                            <span className="text-slate-400 block truncate">{user.email}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className={`font-bold px-2.5 py-1 rounded-lg border text-xs ${
-                            isSuperAdminUser 
-                              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' 
-                              : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
-                          }`}>
-                            {user.role}
-                          </span>
-                          <span className="text-[10px] bg-slate-800 text-cyan-300 px-2 py-0.5 rounded font-bold">{user.status}</span>
-                          
-                          {serverRole === 'super_admin' && !isSuperAdminUser && (
-                            <button
-                              onClick={async () => {
-                                if (!confirm(`Are you sure you want to revoke admin privileges from ${user.email}?`)) return;
-                                try {
-                                  const token = await currentUser?.getIdToken();
-                                  const res = await fetch('/api/admin/revoke-role', {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      'Authorization': `Bearer ${token}`
-                                    },
-                                    body: JSON.stringify({
-                                      targetEmail: user.email,
-                                      targetUid: user.id
-                                    })
-                                  });
-                                  const data = await res.json();
-                                  if (res.ok) {
-                                    alert(`Success: ${data.message}`);
-                                    refreshAdminUsers();
-                                  } else {
-                                    alert(`Error: ${data.error || 'Failed to revoke role'}`);
-                                  }
-                                } catch (err: any) {
-                                  alert(`Request error: ${err.message}`);
-                                }
-                              }}
-                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
-                              title="Revoke Admin Access"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          {isSuperAdminUser && (
-                            <span className="text-[10px] text-amber-400/80 font-medium">Permanent</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
 

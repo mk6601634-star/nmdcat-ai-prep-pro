@@ -83,6 +83,7 @@ import {
   saveDailyTargetToFirestore,
   subscribeToPublishedMcqs
 } from './lib/firestoreService';
+import { usePresenceHeartbeat } from './hooks/usePresenceHeartbeat';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -91,6 +92,10 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
 
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+
+  // Activate heartbeat & session audit recording
+  usePresenceHeartbeat(firebaseUser);
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (usr) => {
