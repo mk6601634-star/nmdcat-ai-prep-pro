@@ -244,6 +244,15 @@ export const AiTutor: React.FC<AiTutorProps> = ({
     setShowHistoryDrawer(false);
   };
 
+  // Switch Strategy Mode
+  const handleModeChange = (newMode: AiTeachingMode) => {
+    setTeachingMode(newMode);
+    // If there is an active conversation, update its mode in state and local storage
+    if (activeConversationId) {
+      setConversations(prev => prev.map(c => c.id === activeConversationId ? { ...c, mode: newMode } : c));
+    }
+  };
+
   // 4. Switch to an Existing Conversation
   const handleSelectConversation = (conv: AiConversation) => {
     setActiveConversationId(conv.id);
@@ -697,11 +706,12 @@ export const AiTutor: React.FC<AiTutorProps> = ({
                     return (
                       <button
                         key={m.id}
+                        type="button"
                         onClick={() => handleModeChange(m.id as AiTeachingMode)}
-                        className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all border shrink-0 whitespace-nowrap ${
+                        className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition-all border shrink-0 whitespace-nowrap cursor-pointer ${
                           isSelected
-                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                            : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
+                            ? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-1 ring-indigo-400'
+                            : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700/80 hover:border-slate-600'
                         }`}
                       >
                         {m.label}
