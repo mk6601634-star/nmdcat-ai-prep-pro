@@ -431,7 +431,7 @@ export const AdminPastPaperUploadModal: React.FC<AdminPastPaperUploadModalProps>
           questionText: qText.trim(),
           options: optionsList,
           correctAnswer: correctIndex,
-          explanation: item.explanation || item.solution || item.reason || undefined,
+          explanation: item.explanation || item.solution || item.reason || '',
           hasOfficialAnswer: correctIndex !== null,
           difficulty: item.difficulty || 'Medium'
         };
@@ -450,8 +450,8 @@ export const AdminPastPaperUploadModal: React.FC<AdminPastPaperUploadModalProps>
         year: embeddedYear,
         examName: embeddedExam || 'NMDCAT',
         conductingBody: embeddedBody || 'PMDC',
-        conductingUniversity: embeddedUniv || undefined,
-        paperDate: paperDate || undefined,
+        conductingUniversity: embeddedUniv || '',
+        paperDate: paperDate || '',
         paperVariant: embeddedVariant || 'Official Paper',
         sourceType: 'STRUCTURED_JSON',
         sourceFileName: selectedFile?.name || fileName || 'past_paper.json',
@@ -471,7 +471,7 @@ export const AdminPastPaperUploadModal: React.FC<AdminPastPaperUploadModalProps>
       setExamYear(embeddedYear);
       setExamName(embeddedExam);
       setConductingBody(embeddedBody);
-      setConductingUniversity(embeddedUniv);
+      setConductingUniversity(embeddedUniv || '');
       setPaperVariant(embeddedVariant);
       setTimeAllowedMinutes(embeddedMinutes);
       setStagedPaper(paper);
@@ -492,19 +492,21 @@ export const AdminPastPaperUploadModal: React.FC<AdminPastPaperUploadModalProps>
     try {
       const finalStatus = publishDirectly ? 'published' : 'draft';
       const currentUser = auth.currentUser;
+      const now = new Date().toISOString();
       const payload: PastPaper = {
         ...stagedPaper,
         title: paperTitle.trim() || stagedPaper.title,
         year: examYear || stagedPaper.year,
         examName: examName || stagedPaper.examName,
         conductingBody: conductingBody || stagedPaper.conductingBody,
-        conductingUniversity: conductingUniversity || stagedPaper.conductingUniversity,
+        conductingUniversity: conductingUniversity || stagedPaper.conductingUniversity || '',
+        paperDate: paperDate || stagedPaper.paperDate || '',
         paperVariant: paperVariant || stagedPaper.paperVariant,
         timeAllowedMinutes: Number(timeAllowedMinutes) || stagedPaper.timeAllowedMinutes,
         verificationStatus,
         status: finalStatus,
-        publishedAt: publishDirectly ? new Date().toISOString() : undefined,
-        publishedBy: publishDirectly ? (currentUser?.email || 'admin') : undefined
+        publishedAt: publishDirectly ? now : '',
+        publishedBy: publishDirectly ? (currentUser?.email || 'admin') : ''
       };
 
       const res = await onSavePaper(payload);

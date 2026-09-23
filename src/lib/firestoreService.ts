@@ -93,6 +93,23 @@ function timestampValue() {
   return new Date().toISOString();
 }
 
+export function removeUndefinedFields<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedFields(item)) as unknown as T;
+  }
+  if (typeof obj === 'object' && !(obj instanceof Date)) {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = removeUndefinedFields(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
 function handleError(message: string, err: unknown) {
   console.warn(message, err);
 }
@@ -2338,16 +2355,18 @@ export async function saveGlobalPastPaper(
   const paperId = paper.id || `past_paper_${Date.now()}`;
   const timestamp = timestampValue();
 
-  const payload: PastPaper = {
+  const rawPayload: PastPaper = {
     ...paper,
     id: paperId,
     status: paper.status || 'draft',
     uploadedAt: paper.uploadedAt || timestamp,
     uploadedBy: adminUid || paper.uploadedBy || 'admin',
-    publishedAt: paper.status === 'published' ? (paper.publishedAt || timestamp) : paper.publishedAt,
-    publishedBy: paper.status === 'published' ? (paper.publishedBy || adminUid) : paper.publishedBy,
+    publishedAt: paper.status === 'published' ? (paper.publishedAt || timestamp) : (paper.publishedAt || ''),
+    publishedBy: paper.status === 'published' ? (paper.publishedBy || adminUid) : (paper.publishedBy || ''),
     questionCount: paper.questions?.length || paper.questionCount || 0
   };
+
+  const payload: PastPaper = removeUndefinedFields(rawPayload);
 
   try {
     const docRef = doc(db, 'pastPapers', paperId);
@@ -2377,7 +2396,12 @@ export async function saveGlobalPastPaper(
         const batchOps = paper.questions.slice(0, 50).map(async (q, idx) => {
           const qId = q.id || `q_${idx + 1}`;
           const qDocRef = doc(db, 'pastPapers', paperId, 'questions', qId);
-          return setDoc(qDocRef, { ...q, pastPaperId: paperId, originalQuestionNumber: q.originalQuestionNumber || idx + 1 }, { merge: true });
+          const sanitizedQ = removeUndefinedFields({
+            ...q,
+            pastPaperId: paperId,
+            originalQuestionNumber: q.originalQuestionNumber || idx + 1
+          });
+          return setDoc(qDocRef, sanitizedQ, { merge: true });
         });
         await Promise.all(batchOps);
       } catch (subErr) {
@@ -2537,7 +2561,8 @@ export async function updatePastPaperMetadata(
   if (!paperId) return { success: false, error: 'Paper ID is required' };
   try {
     const docRef = doc(db, 'pastPapers', paperId);
-    await updateDoc(docRef, updates as any);
+    const sanitizedUpdates = removeUndefinedFields(updates);
+    await updateDoc(docRef, sanitizedUpdates as any);
     return { success: true };
   } catch (err: any) {
     handleError('Error updating past paper metadata:', err);
