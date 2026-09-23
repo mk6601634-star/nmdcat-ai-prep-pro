@@ -75,7 +75,7 @@ export const adminCollections = {
   mindMaps: 'mindMaps',
   mnemonics: 'mnemonics',
   vocab: 'vocab',
-  pastPapers: 'past_papers',
+  pastPapers: 'pastPapers',
   adminUsers: 'adminUsers',
   auditLogs: 'auditLogs',
   reviewQueue: 'reviewQueue',
@@ -2246,7 +2246,7 @@ export function saveLocalPastPapers(papers: PastPaper[]) {
  */
 export function subscribeToPublishedPastPapers(onUpdate: (papers: PastPaper[]) => void) {
   const collectionRef = collection(db, 'pastPapers');
-  const q = query(collectionRef);
+  const q = query(collectionRef, where('status', 'in', ['published', 'PUBLISHED']));
 
   return onSnapshot(
     q,
@@ -2255,8 +2255,7 @@ export function subscribeToPublishedPastPapers(onUpdate: (papers: PastPaper[]) =
       snapshot.forEach((d) => {
         const data = d.data() as any;
         const paper: PastPaper = { ...data, id: data.id || d.id };
-        // Student only sees published papers
-        if (paper.status === 'published' || (paper.status as any) === 'PUBLISHED' || (!paper.status && paper.verificationStatus === 'VERIFIED_OFFICIAL')) {
+        if (paper.status === 'published' || (paper.status as any) === 'PUBLISHED') {
           remotePapers.push(paper);
         }
       });
@@ -2271,10 +2270,28 @@ export function subscribeToPublishedPastPapers(onUpdate: (papers: PastPaper[]) =
       onUpdate(remotePapers);
     },
     (err) => {
-      handleError('Error subscribing to published past papers:', err);
-      // Fallback to cached published papers
-      const cached = getLocalPastPapers().filter(p => p.status === 'published' || (p.status as any) === 'PUBLISHED');
-      onUpdate(cached);
+      console.warn('Direct status-filtered subscription notice:', err);
+      // Fallback query if 'in' operator has indexing constraints
+      try {
+        const fallbackQ = query(collectionRef, where('status', '==', 'published'));
+        return onSnapshot(fallbackQ, (snapshot) => {
+          const remotePapers: PastPaper[] = [];
+          snapshot.forEach((d) => {
+            const data = d.data() as any;
+            remotePapers.push({ ...data, id: data.id || d.id });
+          });
+          remotePapers.sort((a, b) => Number(b.year || 0) - Number(a.year || 0));
+          saveLocalPastPapers(remotePapers);
+          onUpdate(remotePapers);
+        }, (fallbackErr) => {
+          handleError('Error subscribing to published past papers:', fallbackErr);
+          const cached = getLocalPastPapers().filter(p => p.status === 'published' || (p.status as any) === 'PUBLISHED');
+          onUpdate(cached);
+        });
+      } catch {
+        const cached = getLocalPastPapers().filter(p => p.status === 'published' || (p.status as any) === 'PUBLISHED');
+        onUpdate(cached);
+      }
     }
   );
 }
@@ -2336,6 +2353,24 @@ export async function saveGlobalPastPaper(
     const docRef = doc(db, 'pastPapers', paperId);
     await setDoc(docRef, payload, { merge: true });
 
+    // Also sync via backend API if user token is available
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        await fetch('/api/admin/save-past-paper', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ paper: payload })
+        });
+      }
+    } catch (apiErr) {
+      console.warn('Backend save-past-paper sync notice:', apiErr);
+    }
+
     // Also persist individual questions into subcollection for scalability
     if (Array.isArray(paper.questions) && paper.questions.length > 0) {
       try {
@@ -2384,13 +2419,42 @@ export async function publishPastPaper(
 ): Promise<{ success: boolean; error?: string }> {
   if (!paperId) return { success: false, error: 'Paper ID is required' };
   try {
-    const docRef = doc(db, 'pastPapers', paperId);
     const publishedAt = timestampValue();
+    const docRef = doc(db, 'pastPapers', paperId);
     await updateDoc(docRef, {
       status: 'published',
       publishedAt,
       publishedBy: adminUid || 'admin'
     });
+
+    // Also sync via backend API
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        await fetch('/api/admin/publish-past-paper', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ paperId })
+        });
+      }
+    } catch (apiErr) {
+      console.warn('Backend publish-past-paper sync notice:', apiErr);
+    }
+
+    // Update local cache immediately
+    const localPapers = getLocalPastPapers();
+    const p = localPapers.find(item => item.id === paperId);
+    if (p) {
+      p.status = 'published';
+      p.publishedAt = publishedAt;
+      p.publishedBy = adminUid || 'admin';
+      saveLocalPastPapers(localPapers);
+    }
+
     return { success: true };
   } catch (err: any) {
     handleError('Error publishing past paper:', err);
@@ -2410,6 +2474,33 @@ export async function unpublishPastPaper(
     await updateDoc(docRef, {
       status: 'draft'
     });
+
+    // Also sync via backend API
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        await fetch('/api/admin/unpublish-past-paper', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ paperId })
+        });
+      }
+    } catch (apiErr) {
+      console.warn('Backend unpublish-past-paper sync notice:', apiErr);
+    }
+
+    // Update local cache
+    const localPapers = getLocalPastPapers();
+    const p = localPapers.find(item => item.id === paperId);
+    if (p) {
+      p.status = 'draft';
+      saveLocalPastPapers(localPapers);
+    }
+
     return { success: true };
   } catch (err: any) {
     handleError('Error unpublishing past paper:', err);

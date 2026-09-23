@@ -2056,6 +2056,141 @@ Return ONLY a valid JSON object matching this schema:
   }
 });
 
+// Helper: Convert JS object to Firestore Document Fields
+function jsonToFirestoreFields(obj: any): any {
+  const fields: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === undefined) continue;
+    if (val === null) {
+      fields[key] = { nullValue: null };
+    } else if (typeof val === 'string') {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === 'number') {
+      fields[key] = Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    } else if (typeof val === 'boolean') {
+      fields[key] = { booleanValue: val };
+    } else if (Array.isArray(val)) {
+      fields[key] = {
+        arrayValue: {
+          values: val.map(item => {
+            if (item === null || item === undefined) return { nullValue: null };
+            if (typeof item === 'string') return { stringValue: item };
+            if (typeof item === 'number') return Number.isInteger(item) ? { integerValue: String(item) } : { doubleValue: item };
+            if (typeof item === 'boolean') return { booleanValue: item };
+            if (typeof item === 'object') return { mapValue: { fields: jsonToFirestoreFields(item) } };
+            return { stringValue: String(item) };
+          })
+        }
+      };
+    } else if (typeof val === 'object') {
+      fields[key] = { mapValue: { fields: jsonToFirestoreFields(val) } };
+    }
+  }
+  return fields;
+}
+
+// POST /api/admin/save-past-paper
+app.post("/api/admin/save-past-paper", requireAdmin, async (req: any, res: any) => {
+  try {
+    const { paper } = req.body;
+    if (!paper || !paper.id) {
+      return res.status(400).json({ error: "Invalid paper data: id is required." });
+    }
+    const token = req.rawToken;
+    const paperId = paper.id;
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/pastPapers/${paperId}`;
+    
+    const fsRes = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: jsonToFirestoreFields(paper)
+      })
+    });
+
+    if (fsRes.status === 200 || fsRes.status === 201) {
+      return res.json({ success: true, id: paperId, message: "Past paper saved to Firestore successfully." });
+    }
+    const errText = await fsRes.text();
+    return res.status(fsRes.status).json({ error: `Firestore error: ${errText}` });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Failed to save past paper" });
+  }
+});
+
+// POST /api/admin/publish-past-paper
+app.post("/api/admin/publish-past-paper", requireAdmin, async (req: any, res: any) => {
+  try {
+    const { paperId } = req.body;
+    if (!paperId) {
+      return res.status(400).json({ error: "Paper ID is required." });
+    }
+    const token = req.rawToken;
+    const publishedAt = new Date().toISOString();
+    const publishedBy = req.user?.email || "admin";
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/pastPapers/${paperId}?updateMask.fieldPaths=status&updateMask.fieldPaths=publishedAt&updateMask.fieldPaths=publishedBy`;
+
+    const fsRes = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          status: { stringValue: 'published' },
+          publishedAt: { stringValue: publishedAt },
+          publishedBy: { stringValue: publishedBy }
+        }
+      })
+    });
+
+    if (fsRes.status === 200) {
+      return res.json({ success: true, message: "Past paper published globally to all students." });
+    }
+    const errText = await fsRes.text();
+    return res.status(fsRes.status).json({ error: `Firestore error: ${errText}` });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Failed to publish past paper" });
+  }
+});
+
+// POST /api/admin/unpublish-past-paper
+app.post("/api/admin/unpublish-past-paper", requireAdmin, async (req: any, res: any) => {
+  try {
+    const { paperId } = req.body;
+    if (!paperId) {
+      return res.status(400).json({ error: "Paper ID is required." });
+    }
+    const token = req.rawToken;
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/pastPapers/${paperId}?updateMask.fieldPaths=status`;
+
+    const fsRes = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          status: { stringValue: 'draft' }
+        }
+      })
+    });
+
+    if (fsRes.status === 200) {
+      return res.json({ success: true, message: "Past paper unpublished (reverted to draft)." });
+    }
+    const errText = await fsRes.text();
+    return res.status(fsRes.status).json({ error: `Firestore error: ${errText}` });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || "Failed to unpublish past paper" });
+  }
+});
+
 // API Endpoint: AI Quiz Generator (Academic Specification Mode)
 app.post("/api/generate-quiz", async (req, res) => {
   try {
