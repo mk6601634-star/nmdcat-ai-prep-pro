@@ -1,7 +1,7 @@
-import { MODEL_REGISTRY } from '../server/aiModelRegistry';
-import { providersMap } from '../server/aiProviders';
-import { callWithFallback } from '../server/aiProviderRouter';
-import app from '../app';
+import { MODEL_REGISTRY } from './server/aiModelRegistry';
+import { providersMap } from './server/aiProviders';
+import { callWithFallback } from './server/aiProviderRouter';
+import app from './app';
 
 export default function handler(req: any, res: any) {
   res.status(200).json({
