@@ -12,27 +12,86 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { messages, context } = req.body || {};
+    const {
+      question,
+      subject = 'Biology',
+      mode = 'standard',
+      context = '',
+      messages = [],
+      masteryState
+    } = req.body || {};
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'Messages array is required' });
+    // Extract student's query from either `question` field or the last message in `messages`
+    let studentQuery = (typeof question === 'string' && question.trim()) ? question.trim() : '';
+
+    if (!studentQuery && Array.isArray(messages) && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      studentQuery = lastMsg?.text || lastMsg?.content || '';
     }
 
-    const lastMessage = messages[messages.length - 1]?.content || '';
-    const history = messages.slice(0, -1).map((m: any) => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.content}`).join('\n');
+    if (!studentQuery) {
+      return res.status(400).json({ error: 'A question or message is required' });
+    }
 
-    const prompt = `You are an empathetic, highly knowledgeable NMDCAT AI Tutor specializing in Biology, Chemistry, Physics, and English for medical entrance exams in Pakistan.
+    // Build dialogue history if multiple messages exist
+    let dialogueHistory = '';
+    if (Array.isArray(messages) && messages.length > 1) {
+      dialogueHistory = messages
+        .slice(-6, -1) // Keep up to last 5 prior turns
+        .map((m: any) => {
+          const sender = (m.sender === 'user' || m.role === 'user') ? 'Student' : 'Tutor';
+          const text = m.text || m.content || '';
+          return `${sender}: ${text}`;
+        })
+        .filter(Boolean)
+        .join('\n');
+    }
 
-${context ? `CONTEXT/SUBJECT: ${context}\n` : ''}
-${history ? `CONVERSATION HISTORY:\n${history}\n` : ''}
+    // Mode-specific pedagogical guidance
+    let modeInstructions = '';
+    switch (mode) {
+      case 'socratic':
+        modeInstructions = `PEDAGOGICAL MODE: SOCRATIC METHOD
+- Guide the student by asking 1-2 sharp, thoughtful leading questions that trigger their own deduction.
+- Don't just lecture the entire answer immediately; prompt them to connect prerequisite concepts to solve it.`;
+        break;
+      case 'stepByStep':
+        modeInstructions = `PEDAGOGICAL MODE: STEP-BY-STEP BREAKDOWN
+- Structure the explanation as a clear, numbered sequence (Step 1, Step 2, Step 3...).
+- Break complex physiological pathways, chemical mechanisms, or physics derivations into bite-sized logical stages.`;
+        break;
+      case 'analogy':
+        modeInstructions = `PEDAGOGICAL MODE: INTUITIVE ANALOGIES
+- Anchor the explanation around a memorable, intuitive real-world or everyday physical analogy (e.g. factory assembly lines, electrical circuits, architectural structures).
+- Then explicitly map the analogy components directly back to the scientific NMDCAT concept.`;
+        break;
+      case 'mastery':
+        modeInstructions = `PEDAGOGICAL MODE: TEACH UNTIL MASTERY
+- Deliver a thorough breakdown highlighting high-yield PMDC NMDCAT exam traps, common distractors, and subtle exceptions.
+- End with a quick 1-question check-for-understanding MCQ or quick challenge to test their mastery.`;
+        break;
+      case 'standard':
+      default:
+        modeInstructions = `PEDAGOGICAL MODE: STANDARD DIRECT TUTORING
+- Deliver a crystal-clear, structured, high-yield explanation tailored specifically for PMDC NMDCAT exam standards.
+- Highlight key definitions, core mechanisms, formulas, and high-frequency exam points using clean formatting and bold highlights.`;
+        break;
+    }
 
-STUDENT QUESTION:
-${lastMessage}
+    const prompt = `You are an elite, encouraging NMDCAT Medical Tutor for Pakistani medical college entrance aspirants.
 
-INSTRUCTIONS:
-1. Explain clearly with conceptual depth and NMDCAT relevance.
-2. Use clear formatting, bullet points, and memory hooks where helpful.
-3. Be encouraging, concise, and scientifically accurate.`;
+SUBJECT: ${subject.toUpperCase()}
+${modeInstructions}
+${context ? `ADDITIONAL CONTEXT:\n${context}\n` : ''}
+${dialogueHistory ? `RECENT CONVERSATION HISTORY:\n${dialogueHistory}\n` : ''}
+
+STUDENT QUERY:
+"${studentQuery}"
+
+GUIDELINES:
+1. Provide scientifically rigorous, curriculum-aligned explanations adhering to PMDC (Pakistan Medical & Dental Council) / UHS / NUMS / SZABMU standards.
+2. Use clear formatting, bullet points, and KaTeX notation for math/chemistry equations where helpful (e.g. $E=mc^2$ or $\\text{H}_2\\text{O}$).
+3. Be warm, supportive, and focused on building true conceptual mastery.`;
 
     const result = await callWithFallback({
       prompt,
@@ -40,9 +99,15 @@ INSTRUCTIONS:
       maxTokens: 4096,
     });
 
+    const responseText = result.text || 'I could not generate an answer for that query. Please try asking again.';
+
+    // Return all standard aliases (text, reply, answer) for 100% compatibility
     return res.status(200).json({
       success: true,
-      reply: result.text,
+      text: responseText,
+      reply: responseText,
+      answer: responseText,
+      modeUsed: mode,
       provider: result.provider
     });
   } catch (err: any) {

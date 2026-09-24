@@ -346,7 +346,7 @@ export const AiTutor: React.FC<AiTutorProps> = ({
         }
       );
 
-      const aiReplyText = data.text || data.answer || 'I could not generate an answer for that query. Please try asking again.';
+      const aiReplyText = (data as any)?.text || (data as any)?.reply || (data as any)?.answer || 'I could not generate an answer for that query. Please try asking again.';
 
       const aiMsg: AiChatMessage = {
         id: `msg_ai_${Date.now()}`,
