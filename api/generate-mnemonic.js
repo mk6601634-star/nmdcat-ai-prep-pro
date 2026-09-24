@@ -575,26 +575,6 @@ async function callWithFallback(options) {
 }
 
 // api/_lib/auth.ts
-import crypto2 from "crypto";
-var googleKeyCache = { keys: {}, expireAt: 0 };
-async function getGooglePublicCerts() {
-  const now = Date.now();
-  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
-    return googleKeyCache.keys;
-  }
-  try {
-    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
-    const cacheControl = res.headers.get("cache-control") || "";
-    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1e3 : 36e5;
-    googleKeyCache.keys = await res.json();
-    googleKeyCache.expireAt = now + maxAge;
-    return googleKeyCache.keys;
-  } catch (e) {
-    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
-    return googleKeyCache.keys;
-  }
-}
 async function verifyAuth(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
   if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
@@ -612,27 +592,13 @@ async function verifyAuth(req) {
     if (parts.length !== 3) {
       return { authenticated: false, error: "Invalid JWT format" };
     }
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const signature = Buffer.from(parts[2], "base64url");
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp && payload.exp < now - 300) {
       return { authenticated: false, error: "Firebase token has expired" };
     }
-    if (header.kid) {
-      try {
-        const keys = await getGooglePublicCerts();
-        const cert = keys[header.kid];
-        if (cert) {
-          const verifier = crypto2.createVerify("RSA-SHA256");
-          verifier.update(parts[0] + "." + parts[1]);
-          if (!verifier.verify(cert, signature)) {
-            console.warn("[verifyAuth] Signature check failed, but payload is well-formed.");
-          }
-        }
-      } catch (certErr) {
-        console.warn("[verifyAuth] Public cert verification skipped:", certErr);
-      }
+    if (!payload.user_id && !payload.sub && !payload.uid) {
+      return { authenticated: false, error: "Invalid token claims" };
     }
     return { authenticated: true, user: payload };
   } catch (err) {
@@ -640,7 +606,7 @@ async function verifyAuth(req) {
   }
 }
 
-// api/generate-mnemonic.ts
+// api_src/generate-mnemonics.ts
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -650,27 +616,25 @@ async function handler(req, res) {
     return res.status(401).json({ error: authResult.error || "Authentication required", code: "auth/unauthorized" });
   }
   try {
-    const { subject, topic, concept, difficultyMode = "NORMAL" } = req.body || {};
-    if (!topic || !concept) {
-      return res.status(400).json({ error: "Topic and concept are required" });
+    const { concept, topic, subject = "Biology" } = req.body || {};
+    const target = concept || topic;
+    if (!target || typeof target !== "string") {
+      return res.status(400).json({ error: "Concept or topic is required" });
     }
-    const validSubject = subject || "General";
-    const prompt = `You are an expert NMDCAT mnemonic generator for Pakistani medical college entrance tests.
-Generate high-yield memory mnemonics for:
-SUBJECT: ${validSubject.toUpperCase()}
-Topic: ${topic}
-Concept: ${concept}
-Difficulty: ${difficultyMode}
+    const prompt = `You are an expert NMDCAT medical memorization specialist.
+Create 3 high-yield mnemonics to easily memorize:
+SUBJECT: ${subject}
+CONCEPT/TOPIC: ${target}
 
-Return ONLY valid JSON with this structure:
+Return ONLY valid JSON with this exact schema:
 {
   "mnemonics": [
     {
-      "mnemonic": "THE MEMORABLE PHRASE OR ACRONYM",
-      "expansion": "Explanation of what each letter or word represents",
-      "howToRemember": "A memorable mental visualization trick",
-      "examContext": "How this concept appears in NMDCAT questions",
-      "relatedConcepts": ["Related concept 1", "Related concept 2"]
+      "title": "Mnemonic Catchphrase or Acronym",
+      "expansion": "Explanation of what each letter/word stands for",
+      "explanation": "Why this is effective for NMDCAT exam recall",
+      "subject": "${subject}",
+      "tags": ["NMDCAT", "${subject}"]
     }
   ]
 }`;
@@ -681,10 +645,9 @@ Return ONLY valid JSON with this structure:
       jsonMode: true
     });
     const parsed = extractJsonFromText(result.text);
-    const mnemonics = parsed?.mnemonics || (Array.isArray(parsed) ? parsed : []);
     return res.status(200).json({
       success: true,
-      mnemonics,
+      mnemonics: parsed?.mnemonics || (Array.isArray(parsed) ? parsed : []),
       provider: result.provider
     });
   } catch (err) {

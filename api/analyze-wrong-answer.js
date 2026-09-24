@@ -575,26 +575,6 @@ async function callWithFallback(options) {
 }
 
 // api/_lib/auth.ts
-import crypto2 from "crypto";
-var googleKeyCache = { keys: {}, expireAt: 0 };
-async function getGooglePublicCerts() {
-  const now = Date.now();
-  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
-    return googleKeyCache.keys;
-  }
-  try {
-    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
-    const cacheControl = res.headers.get("cache-control") || "";
-    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1e3 : 36e5;
-    googleKeyCache.keys = await res.json();
-    googleKeyCache.expireAt = now + maxAge;
-    return googleKeyCache.keys;
-  } catch (e) {
-    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
-    return googleKeyCache.keys;
-  }
-}
 async function verifyAuth(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
   if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
@@ -612,27 +592,13 @@ async function verifyAuth(req) {
     if (parts.length !== 3) {
       return { authenticated: false, error: "Invalid JWT format" };
     }
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const signature = Buffer.from(parts[2], "base64url");
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp && payload.exp < now - 300) {
       return { authenticated: false, error: "Firebase token has expired" };
     }
-    if (header.kid) {
-      try {
-        const keys = await getGooglePublicCerts();
-        const cert = keys[header.kid];
-        if (cert) {
-          const verifier = crypto2.createVerify("RSA-SHA256");
-          verifier.update(parts[0] + "." + parts[1]);
-          if (!verifier.verify(cert, signature)) {
-            console.warn("[verifyAuth] Signature check failed, but payload is well-formed.");
-          }
-        }
-      } catch (certErr) {
-        console.warn("[verifyAuth] Public cert verification skipped:", certErr);
-      }
+    if (!payload.user_id && !payload.sub && !payload.uid) {
+      return { authenticated: false, error: "Invalid token claims" };
     }
     return { authenticated: true, user: payload };
   } catch (err) {
@@ -640,7 +606,7 @@ async function verifyAuth(req) {
   }
 }
 
-// api/analyze-wrong-answer.ts
+// api_src/analyze-wrong-answer.ts
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -650,51 +616,43 @@ async function handler(req, res) {
     return res.status(401).json({ error: authResult.error || "Authentication required", code: "auth/unauthorized" });
   }
   try {
-    const { question, options, correctAnswer, userAnswer, explanation, topic, subject } = req.body || {};
-    if (!question || !options || correctAnswer === void 0 || userAnswer === void 0) {
-      return res.status(400).json({ error: "Missing required fields" });
+    const { question, options, selectedAnswer, correctAnswer, explanation, subject, topic } = req.body || {};
+    if (!question || !selectedAnswer || !correctAnswer) {
+      return res.status(400).json({ error: "Question, selectedAnswer, and correctAnswer are required" });
     }
-    const validSubject = subject || "General Science";
-    const prompt = `You are an expert NMDCAT tutor analyzing a student's incorrect answer.
-SUBJECT: ${validSubject.toUpperCase()}
-Question: ${question}
-Topic: ${topic || "General"}
+    const prompt = `You are a specialized NMDCAT exam diagnostic tutor analyzing a student's incorrect MCQ answer.
 
-Options:
-A: ${options[0]}
-B: ${options[1]}
-C: ${options[2]}
-D: ${options[3]}
+QUESTION:
+${question}
 
-Correct Answer: ${correctAnswer}
-Student's Answer: ${userAnswer}
-Provided Explanation: ${explanation || "None"}
+OPTIONS:
+${Array.isArray(options) ? options.map((opt, i) => `${String.fromCharCode(65 + i)}: ${opt}`).join("\n") : ""}
 
-Provide an in-depth analysis in JSON format:
+STUDENT'S WRONG ANSWER: ${selectedAnswer}
+CORRECT ANSWER: ${correctAnswer}
+ORIGINAL EXPLANATION: ${explanation || "N/A"}
+${subject ? `SUBJECT: ${subject}` : ""}
+${topic ? `TOPIC: ${topic}` : ""}
+
+Analyze why the student made this mistake and provide diagnostic feedback.
+Return ONLY valid JSON with this schema:
 {
-  "whyWrong": "Specific explanation of why the student's selected answer is incorrect",
-  "rootCause": "The conceptual misunderstanding or trap that led to this error",
-  "keyConcept": "The core concept the student needs to understand",
-  "eliminationLogic": {
-    "A": "Why option A is right or wrong",
-    "B": "Why option B is right or wrong",
-    "C": "Why option C is right or wrong",
-    "D": "Why option D is right or wrong"
-  },
-  "memoryHook": "A quick memory tip or mnemonic to remember this correctly in the exam",
-  "similarTrapWarning": "A warning about similar tricky question patterns to watch for"
-}
-Return ONLY valid JSON.`;
+  "whyWrong": "Explanation of the misconception that likely caused the student to pick the wrong option",
+  "whyCorrect": "Clear scientific reasoning why the correct option is right",
+  "rootMisconception": "The fundamental concept or principle that was misunderstood",
+  "howToAvoid": "Rule of thumb or cognitive trick to avoid this trap in future NMDCAT questions",
+  "recommendedAction": "Specific sub-topic or diagram the student should review"
+}`;
     const result = await callWithFallback({
       prompt,
       temperature: 0.7,
       maxTokens: 4096,
       jsonMode: true
     });
-    const analysis = extractJsonFromText(result.text) || {};
+    const parsed = extractJsonFromText(result.text);
     return res.status(200).json({
       success: true,
-      analysis,
+      analysis: parsed,
       provider: result.provider
     });
   } catch (err) {

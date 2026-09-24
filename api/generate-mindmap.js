@@ -575,26 +575,6 @@ async function callWithFallback(options) {
 }
 
 // api/_lib/auth.ts
-import crypto2 from "crypto";
-var googleKeyCache = { keys: {}, expireAt: 0 };
-async function getGooglePublicCerts() {
-  const now = Date.now();
-  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
-    return googleKeyCache.keys;
-  }
-  try {
-    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
-    const cacheControl = res.headers.get("cache-control") || "";
-    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1e3 : 36e5;
-    googleKeyCache.keys = await res.json();
-    googleKeyCache.expireAt = now + maxAge;
-    return googleKeyCache.keys;
-  } catch (e) {
-    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
-    return googleKeyCache.keys;
-  }
-}
 async function verifyAuth(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
   if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
@@ -612,27 +592,13 @@ async function verifyAuth(req) {
     if (parts.length !== 3) {
       return { authenticated: false, error: "Invalid JWT format" };
     }
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const signature = Buffer.from(parts[2], "base64url");
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp && payload.exp < now - 300) {
       return { authenticated: false, error: "Firebase token has expired" };
     }
-    if (header.kid) {
-      try {
-        const keys = await getGooglePublicCerts();
-        const cert = keys[header.kid];
-        if (cert) {
-          const verifier = crypto2.createVerify("RSA-SHA256");
-          verifier.update(parts[0] + "." + parts[1]);
-          if (!verifier.verify(cert, signature)) {
-            console.warn("[verifyAuth] Signature check failed, but payload is well-formed.");
-          }
-        }
-      } catch (certErr) {
-        console.warn("[verifyAuth] Public cert verification skipped:", certErr);
-      }
+    if (!payload.user_id && !payload.sub && !payload.uid) {
+      return { authenticated: false, error: "Invalid token claims" };
     }
     return { authenticated: true, user: payload };
   } catch (err) {
@@ -640,7 +606,7 @@ async function verifyAuth(req) {
   }
 }
 
-// api/generate-mindmap.ts
+// api_src/generate-mindmap.ts
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -650,35 +616,33 @@ async function handler(req, res) {
     return res.status(401).json({ error: authResult.error || "Authentication required", code: "auth/unauthorized" });
   }
   try {
-    const { subject, topic, difficultyMode = "NORMAL" } = req.body || {};
-    if (!topic || typeof topic !== "string" || !topic.trim()) {
+    const { topic, subject = "Biology" } = req.body || {};
+    if (!topic || typeof topic !== "string") {
       return res.status(400).json({ error: "Topic is required" });
     }
-    const validSubject = subject || "General";
-    const prompt = `You are an expert NMDCAT mind map generator.
-Generate a structured conceptual mind map for:
-SUBJECT: ${validSubject.toUpperCase()}
-Topic: ${topic}
-Difficulty: ${difficultyMode}
+    const prompt = `You are an expert NMDCAT curriculum mind map generator.
+Create a comprehensive hierarchical conceptual mind map for:
+SUBJECT: ${subject}
+TOPIC: ${topic}
 
-Return ONLY valid JSON with this structure:
+Return ONLY valid JSON with this exact schema:
 {
-  "centralConcept": "${topic}",
-  "branches": [
+  "id": "root",
+  "title": "${topic}",
+  "nodes": [
     {
-      "name": "Subtopic Branch Name",
-      "subBranches": [
+      "id": "node_1",
+      "label": "Key Concept 1",
+      "description": "Brief explanation",
+      "children": [
         {
-          "name": "Sub-concept",
-          "details": "Key high-yield fact or mechanism",
-          "examRelevance": "Why this appears in NMDCAT"
+          "id": "node_1_1",
+          "label": "Sub-concept",
+          "description": "Details"
         }
       ]
     }
-  ],
-  "keyFacts": ["Crucial fact 1", "Crucial fact 2"],
-  "misconceptions": ["Common misconception 1"],
-  "examTips": ["High-yield exam tip"]
+  ]
 }`;
     const result = await callWithFallback({
       prompt,
@@ -686,18 +650,10 @@ Return ONLY valid JSON with this structure:
       maxTokens: 4096,
       jsonMode: true
     });
-    const rawMindMap = extractJsonFromText(result.text) || {};
-    const branches = Array.isArray(rawMindMap) ? rawMindMap : rawMindMap.branches || rawMindMap.nodes || rawMindMap.subtopics || [];
-    const normalizedMindMap = {
-      centralConcept: rawMindMap.centralConcept || topic,
-      branches: Array.isArray(branches) ? branches : [],
-      keyFacts: rawMindMap.keyFacts || [],
-      misconceptions: rawMindMap.misconceptions || [],
-      examTips: rawMindMap.examTips || []
-    };
+    const parsed = extractJsonFromText(result.text);
     return res.status(200).json({
       success: true,
-      mindMap: normalizedMindMap,
+      data: parsed || { id: "root", title: topic, nodes: [] },
       provider: result.provider
     });
   } catch (err) {

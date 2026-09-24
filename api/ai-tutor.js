@@ -484,26 +484,6 @@ async function callWithFallback(options) {
 }
 
 // api/_lib/auth.ts
-import crypto2 from "crypto";
-var googleKeyCache = { keys: {}, expireAt: 0 };
-async function getGooglePublicCerts() {
-  const now = Date.now();
-  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
-    return googleKeyCache.keys;
-  }
-  try {
-    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
-    const cacheControl = res.headers.get("cache-control") || "";
-    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1e3 : 36e5;
-    googleKeyCache.keys = await res.json();
-    googleKeyCache.expireAt = now + maxAge;
-    return googleKeyCache.keys;
-  } catch (e) {
-    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
-    return googleKeyCache.keys;
-  }
-}
 async function verifyAuth(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
   if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
@@ -521,27 +501,13 @@ async function verifyAuth(req) {
     if (parts.length !== 3) {
       return { authenticated: false, error: "Invalid JWT format" };
     }
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const signature = Buffer.from(parts[2], "base64url");
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp && payload.exp < now - 300) {
       return { authenticated: false, error: "Firebase token has expired" };
     }
-    if (header.kid) {
-      try {
-        const keys = await getGooglePublicCerts();
-        const cert = keys[header.kid];
-        if (cert) {
-          const verifier = crypto2.createVerify("RSA-SHA256");
-          verifier.update(parts[0] + "." + parts[1]);
-          if (!verifier.verify(cert, signature)) {
-            console.warn("[verifyAuth] Signature check failed, but payload is well-formed.");
-          }
-        }
-      } catch (certErr) {
-        console.warn("[verifyAuth] Public cert verification skipped:", certErr);
-      }
+    if (!payload.user_id && !payload.sub && !payload.uid) {
+      return { authenticated: false, error: "Invalid token claims" };
     }
     return { authenticated: true, user: payload };
   } catch (err) {
@@ -549,7 +515,7 @@ async function verifyAuth(req) {
   }
 }
 
-// api/ai-tutor.ts
+// api_src/ai-tutor.ts
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -559,23 +525,27 @@ async function handler(req, res) {
     return res.status(401).json({ error: authResult.error || "Authentication required", code: "auth/unauthorized" });
   }
   try {
-    const { prompt: userPrompt, query, message, subject = "General", mode = "socratic", context } = req.body || {};
-    const queryText = userPrompt || query || message || "";
-    if (!queryText.trim()) {
-      return res.status(400).json({ error: "Query is required" });
+    const { messages, context } = req.body || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "Messages array is required" });
     }
-    const prompt = `You are an expert NMDCAT (National Medical and Dental College Admission Test) AI Medical Tutor in Pakistan.
-SUBJECT: ${subject.toUpperCase()}
-Mode: ${mode}
+    const lastMessage = messages[messages.length - 1]?.content || "";
+    const history = messages.slice(0, -1).map((m) => `${m.role === "user" ? "Student" : "Tutor"}: ${m.content}`).join("\n");
+    const prompt = `You are an empathetic, highly knowledgeable NMDCAT AI Tutor specializing in Biology, Chemistry, Physics, and English for medical entrance exams in Pakistan.
 
-${context ? `CONTEXT: ${context}
+${context ? `CONTEXT/SUBJECT: ${context}
 ` : ""}
-STUDENT QUERY: "${queryText}"
+${history ? `CONVERSATION HISTORY:
+${history}
+` : ""}
 
-CRITICAL FORMATTING RULES:
-1. Always format math formulas, physics quantities, and chemical formulas in clean LaTeX notation with inline $...$ or display $$...$$.
-2. Use clean markdown.
-3. Be direct, scientifically accurate according to PMDC / FSc syllabus, and helpful.`;
+STUDENT QUESTION:
+${lastMessage}
+
+INSTRUCTIONS:
+1. Explain clearly with conceptual depth and NMDCAT relevance.
+2. Use clear formatting, bullet points, and memory hooks where helpful.
+3. Be encouraging, concise, and scientifically accurate.`;
     const result = await callWithFallback({
       prompt,
       temperature: 0.7,
@@ -583,15 +553,13 @@ CRITICAL FORMATTING RULES:
     });
     return res.status(200).json({
       success: true,
-      text: result.text,
-      answer: result.text,
-      provider: result.provider,
-      modeUsed: mode
+      reply: result.text,
+      provider: result.provider
     });
   } catch (err) {
     console.error("[ai-tutor error]:", err);
     return res.status(500).json({
-      error: "Failed to generate AI Tutor response",
+      error: "Failed to get AI Tutor response",
       details: err?.message || String(err)
     });
   }

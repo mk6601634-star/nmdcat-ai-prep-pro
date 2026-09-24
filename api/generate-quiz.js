@@ -575,26 +575,6 @@ async function callWithFallback(options) {
 }
 
 // api/_lib/auth.ts
-import crypto2 from "crypto";
-var googleKeyCache = { keys: {}, expireAt: 0 };
-async function getGooglePublicCerts() {
-  const now = Date.now();
-  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
-    return googleKeyCache.keys;
-  }
-  try {
-    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
-    const cacheControl = res.headers.get("cache-control") || "";
-    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1e3 : 36e5;
-    googleKeyCache.keys = await res.json();
-    googleKeyCache.expireAt = now + maxAge;
-    return googleKeyCache.keys;
-  } catch (e) {
-    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
-    return googleKeyCache.keys;
-  }
-}
 async function verifyAuth(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
   if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
@@ -612,27 +592,13 @@ async function verifyAuth(req) {
     if (parts.length !== 3) {
       return { authenticated: false, error: "Invalid JWT format" };
     }
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const signature = Buffer.from(parts[2], "base64url");
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp && payload.exp < now - 300) {
       return { authenticated: false, error: "Firebase token has expired" };
     }
-    if (header.kid) {
-      try {
-        const keys = await getGooglePublicCerts();
-        const cert = keys[header.kid];
-        if (cert) {
-          const verifier = crypto2.createVerify("RSA-SHA256");
-          verifier.update(parts[0] + "." + parts[1]);
-          if (!verifier.verify(cert, signature)) {
-            console.warn("[verifyAuth] Signature check failed, but payload is well-formed.");
-          }
-        }
-      } catch (certErr) {
-        console.warn("[verifyAuth] Public cert verification skipped:", certErr);
-      }
+    if (!payload.user_id && !payload.sub && !payload.uid) {
+      return { authenticated: false, error: "Invalid token claims" };
     }
     return { authenticated: true, user: payload };
   } catch (err) {
@@ -640,7 +606,7 @@ async function verifyAuth(req) {
   }
 }
 
-// api/generate-quiz.ts
+// api_src/generate-quiz.ts
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -650,48 +616,36 @@ async function handler(req, res) {
     return res.status(401).json({ error: authResult.error || "Authentication required", code: "auth/unauthorized" });
   }
   try {
-    const {
-      subject = "Biology",
-      chapter = "General",
-      topic = "General",
-      difficulty = "Medium",
-      cognitiveLevel = "Application",
-      generationMode = "SIMPLE",
-      quantity = 5,
-      requestId
-    } = req.body || {};
-    const actualRequestId = requestId || `gen_${Date.now()}`;
-    const count = Math.min(Math.max(Number(quantity) || 5, 1), 50);
-    const prompt = `You are an expert Pakistani Medical College Admission Test (NMDCAT) question developer.
-Generate ${count} authentic, high-quality Multiple Choice Questions with the following specifications:
-- Subject: ${subject}
-- Chapter/Unit: ${chapter}
-- Topic: ${topic}
-- Target Difficulty: ${difficulty}
-- Cognitive Level: ${cognitiveLevel}
-- Generation Mode: ${generationMode}
+    const { subject, topic, subtopic, difficulty = "Medium", count = 10, mode } = req.body || {};
+    if (!topic || typeof topic !== "string" || !topic.trim()) {
+      return res.status(400).json({ error: "Topic is required" });
+    }
+    const validSubject = subject || "Biology";
+    const quantity = Math.min(Math.max(Number(count) || 10, 1), 50);
+    const prompt = `You are a premier NMDCAT question architect.
+Generate ${quantity} high-yield multiple-choice questions for:
+SUBJECT: ${validSubject.toUpperCase()}
+TOPIC: ${topic}
+${subtopic ? `SUBTOPIC: ${subtopic}` : ""}
+DIFFICULTY: ${difficulty}
+MODE: ${mode || "standard"}
 
-CRITICAL RULES:
-1. Every question MUST have exactly 4 options labeled A, B, C, D.
-2. Exactly ONE option must be scientifically correct according to Pakistani PMDC syllabus.
-3. Distractors must reflect common student misconceptions.
-4. Explanations must be thorough and scientifically sound.
+REQUIREMENTS:
+1. Standard 4-option MCQs (A, B, C, D).
+2. Exactly ONE option is strictly correct.
+3. Plausible distractors designed around common misconceptions.
+4. Comprehensive explanation for the answer.
 
-Return ONLY a valid JSON object with this exact structure:
+Return ONLY a valid JSON object:
 {
   "questions": [
     {
-      "question": "Question text here",
-      "options": {
-        "A": "Option A text",
-        "B": "Option B text",
-        "C": "Option C text",
-        "D": "Option D text"
-      },
+      "id": "q1",
+      "question": "Question text",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctAnswer": "A",
-      "explanation": "Detailed explanation",
+      "explanation": "Scientific justification",
       "difficulty": "${difficulty}",
-      "cognitiveLevel": "${cognitiveLevel}",
       "topic": "${topic}"
     }
   ]
@@ -703,53 +657,21 @@ Return ONLY a valid JSON object with this exact structure:
       jsonMode: true
     });
     const parsed = extractJsonFromText(result.text);
-    const rawQuestions = parsed?.questions || (Array.isArray(parsed) ? parsed : []);
-    const mappedQuestions = rawQuestions.map((q, idx) => ({
-      id: `${actualRequestId}_q${idx}`,
-      subject,
-      chapter,
-      topic: q.topic || topic,
-      question: q.question,
-      options: [
-        q.options?.A || q.options?.[0] || "A",
-        q.options?.B || q.options?.[1] || "B",
-        q.options?.C || q.options?.[2] || "C",
-        q.options?.D || q.options?.[3] || "D"
-      ],
-      correctIndex: ["A", "B", "C", "D"].includes(q.correctAnswer) ? ["A", "B", "C", "D"].indexOf(q.correctAnswer) : 0,
-      explanation: q.explanation || "Correct as per PMDC standards",
-      difficulty: q.difficulty || difficulty,
-      cognitiveLevel: q.cognitiveLevel || cognitiveLevel,
-      type: "Standard",
-      source: "AI_GENERATED",
-      sourceReference: `Generated for ${topic}`,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      version: 1,
-      status: "AI_GENERATED",
-      verificationStatus: "AI_GENERATED",
-      authorType: "AI",
-      generationModel: result.model,
-      generationRequestId: actualRequestId
-    }));
+    const questions = parsed?.questions || (Array.isArray(parsed) ? parsed : []);
+    const validQuestions = questions.filter((q) => {
+      return q.question && Array.isArray(q.options) && q.options.length === 4 && ["A", "B", "C", "D"].includes(q.correctAnswer) && q.explanation;
+    });
     return res.status(200).json({
       success: true,
-      questions: mappedQuestions,
-      items: mappedQuestions,
-      metadata: {
-        totalGenerated: mappedQuestions.length,
-        subject,
-        chapter,
-        topic,
-        difficulty,
-        generationMode,
-        model: result.model
-      }
+      questions: validQuestions,
+      requested: quantity,
+      generated: validQuestions.length,
+      provider: result.provider
     });
   } catch (err) {
     console.error("[generate-quiz error]:", err);
     return res.status(500).json({
-      error: "Failed to generate quiz questions",
+      error: "Failed to generate quiz",
       details: err?.message || String(err)
     });
   }

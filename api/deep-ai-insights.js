@@ -575,26 +575,6 @@ async function callWithFallback(options) {
 }
 
 // api/_lib/auth.ts
-import crypto2 from "crypto";
-var googleKeyCache = { keys: {}, expireAt: 0 };
-async function getGooglePublicCerts() {
-  const now = Date.now();
-  if (googleKeyCache.expireAt > now && Object.keys(googleKeyCache.keys).length > 0) {
-    return googleKeyCache.keys;
-  }
-  try {
-    const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
-    const cacheControl = res.headers.get("cache-control") || "";
-    const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-    const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1e3 : 36e5;
-    googleKeyCache.keys = await res.json();
-    googleKeyCache.expireAt = now + maxAge;
-    return googleKeyCache.keys;
-  } catch (e) {
-    console.error("[TokenVerifier] Failed to fetch Google public certificates:", e);
-    return googleKeyCache.keys;
-  }
-}
 async function verifyAuth(req) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization;
   if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
@@ -612,27 +592,13 @@ async function verifyAuth(req) {
     if (parts.length !== 3) {
       return { authenticated: false, error: "Invalid JWT format" };
     }
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const signature = Buffer.from(parts[2], "base64url");
     const now = Math.floor(Date.now() / 1e3);
     if (payload.exp && payload.exp < now - 300) {
       return { authenticated: false, error: "Firebase token has expired" };
     }
-    if (header.kid) {
-      try {
-        const keys = await getGooglePublicCerts();
-        const cert = keys[header.kid];
-        if (cert) {
-          const verifier = crypto2.createVerify("RSA-SHA256");
-          verifier.update(parts[0] + "." + parts[1]);
-          if (!verifier.verify(cert, signature)) {
-            console.warn("[verifyAuth] Signature check failed, but payload is well-formed.");
-          }
-        }
-      } catch (certErr) {
-        console.warn("[verifyAuth] Public cert verification skipped:", certErr);
-      }
+    if (!payload.user_id && !payload.sub && !payload.uid) {
+      return { authenticated: false, error: "Invalid token claims" };
     }
     return { authenticated: true, user: payload };
   } catch (err) {
@@ -640,7 +606,7 @@ async function verifyAuth(req) {
   }
 }
 
-// api/deep-ai-insights.ts
+// api_src/deep-ai-insights.ts
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -650,65 +616,39 @@ async function handler(req, res) {
     return res.status(401).json({ error: authResult.error || "Authentication required", code: "auth/unauthorized" });
   }
   try {
-    const { questions, userAnswers, subject, topic, difficultyMode = "NORMAL" } = req.body || {};
-    if (!questions || !userAnswers || !Array.isArray(questions)) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-    const validSubject = subject || "General Science";
-    const quizSummary = questions.map((q, idx) => ({
-      question: q.question,
-      concept: q.concept,
-      correctAnswer: q.correctAnswer,
-      userAnswer: userAnswers[idx],
-      isCorrect: userAnswers[idx] === q.correctAnswer
-    }));
-    const correctCount = quizSummary.filter((q) => q.isCorrect).length;
-    const totalCount = quizSummary.length;
-    const accuracy = totalCount > 0 ? Math.round(correctCount / totalCount * 100) : 0;
-    const prompt = `You are an expert NMDCAT learning coach analyzing a student's quiz performance.
-SUBJECT: ${validSubject.toUpperCase()}
-Topic: ${topic || "General"}
-Difficulty Mode: ${difficultyMode}
-Accuracy: ${accuracy}% (${correctCount}/${totalCount} correct)
+    const { results, quizSubject, quizTopic } = req.body || {};
+    const prompt = `You are the lead academic strategist for NMDCAT medical college preparation in Pakistan.
+Analyze this student's completed quiz performance and generate deep actionable insights.
 
-Quiz Results:
-${JSON.stringify(quizSummary, null, 2)}
+SUBJECT: ${quizSubject || "General NMDCAT"}
+TOPIC: ${quizTopic || "General"}
+RESULTS DATA: ${JSON.stringify(results || [])}
 
-Provide comprehensive diagnostic insights in JSON format:
+Return ONLY valid JSON with this schema:
 {
-  "overallPerformance": "Brief summary of overall performance",
-  "strongConcepts": ["List of concepts the student performed well on"],
-  "weakConcepts": ["List of concepts the student struggled with"],
-  "recurringMistakes": ["List of recurring mistake patterns observed"],
-  "misconceptions": ["List of specific misconceptions identified"],
-  "difficultyPerformance": "Analysis of performance across difficulty levels",
-  "topicWeaknesses": ["List of topic-level weaknesses"],
-  "reasoningErrors": ["List of reasoning errors observed"],
-  "knowledgeGaps": ["List of knowledge gaps identified"],
-  "recommendedRevision": ["List of specific concepts/topics to revise"],
-  "recommendedNextDifficulty": "Suggested difficulty for next quiz (NORMAL/ADVANCED/ULTRA_ADVANCED)",
-  "recommendedNextTopics": ["List of recommended topics to practice next"]
-}
-Return ONLY valid JSON.`;
+  "readinessScore": 85,
+  "summary": "High-level diagnostic summary of performance",
+  "strengths": ["Identified strong areas"],
+  "weaknesses": ["Key high-priority gaps"],
+  "recommendedTopics": ["Next topics to study"],
+  "studyTip": "High-impact tactical exam advice"
+}`;
     const result = await callWithFallback({
       prompt,
       temperature: 0.7,
       maxTokens: 4096,
       jsonMode: true
     });
-    const insights = extractJsonFromText(result.text) || {};
+    const parsed = extractJsonFromText(result.text);
     return res.status(200).json({
       success: true,
-      insights,
-      accuracy,
-      correctCount,
-      totalCount,
+      insights: parsed,
       provider: result.provider
     });
   } catch (err) {
     console.error("[deep-ai-insights error]:", err);
     return res.status(500).json({
-      error: "Failed to generate deep AI insights",
+      error: "Failed to generate deep insights",
       details: err?.message || String(err)
     });
   }
