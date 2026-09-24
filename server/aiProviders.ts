@@ -3,7 +3,7 @@ import type {
   AIProviderId,
   AiGenerateOptions,
   AiGenerateResult
-} from './aiTypes.ts';
+} from './aiTypes';
 
 // Cooldown tracking per API key to bypass rate-limited keys instantly (0ms)
 const keyCooldowns = new Map<string, number>();

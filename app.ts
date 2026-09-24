@@ -4,11 +4,11 @@ import fs from "fs";
 import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter.ts";
-import { activeConfig, MODEL_REGISTRY, usageMetrics } from "./server/aiModelRegistry.ts";
-import { providersMap } from "./server/aiProviders.ts";
-import type { AIProviderId, AIMode } from "./server/aiTypes.ts";
-import { validateAndEnrichPrismClaim } from "./src/components/prism/prismSuperlativeValidator.ts";
+import { callWithFallback, extractJsonFromText } from "./server/aiProviderRouter";
+import { activeConfig, MODEL_REGISTRY, usageMetrics } from "./server/aiModelRegistry";
+import { providersMap } from "./server/aiProviders";
+import type { AIProviderId, AIMode } from "./server/aiTypes";
+import { validateAndEnrichPrismClaim } from "./src/components/prism/prismSuperlativeValidator";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();

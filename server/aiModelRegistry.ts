@@ -9,8 +9,8 @@ import type {
   ProviderHealthStatus,
   AiGenerateResult,
   AiGenerateOptions,
-} from './aiTypes.ts';
-import { providersMap } from './aiProviders.ts';
+} from './aiTypes';
+import { providersMap } from './aiProviders';
 
 // Centralized Model Registry
 export const MODEL_REGISTRY: AIModelDefinition[] = [

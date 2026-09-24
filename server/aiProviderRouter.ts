@@ -3,12 +3,12 @@ import type {
   AiGenerateResult,
   AIProviderId,
   AITaskCategory,
-} from './aiTypes.ts';
+} from './aiTypes';
 import {
   providersMap,
   isQuotaOrTransientError,
   isConfigurationError,
-} from './aiProviders.ts';
+} from './aiProviders';
 import {
   activeConfig,
   recordUsage,
@@ -16,7 +16,7 @@ import {
   setCachedResponse,
   getRecommendedProviderForTask,
   MODEL_REGISTRY,
-} from './aiModelRegistry.ts';
+} from './aiModelRegistry';
 
 // Cleanly extract JSON from text (handles markdown blocks, raw JSON arrays, objects, and partial streams)
 export function extractJsonFromText(text: string): any {

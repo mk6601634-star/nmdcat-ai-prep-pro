@@ -1,4 +1,4 @@
-import app from "./app.ts";
+import app from "./app";
 import path from "path";
 import fs from "fs";
 import express from "express";
