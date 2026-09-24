@@ -1,5 +1,5 @@
-import { callWithFallback } from './_lib/aiProviderRouter';
-import { verifyAuth } from './_lib/auth';
+import { callWithFallback } from './_lib/aiEngine.js';
+import { verifyAuth } from './_lib/authEngine.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -12,7 +12,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { prompt: userPrompt, query, message, subject = 'General', mode = 'socratic', context, history } = req.body || {};
+    const { prompt: userPrompt, query, message, subject = 'General', mode = 'socratic', context } = req.body || {};
     const queryText = userPrompt || query || message || '';
 
     if (!queryText.trim()) {
