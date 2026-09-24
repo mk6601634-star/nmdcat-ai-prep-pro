@@ -3557,10 +3557,11 @@ const isServerless = Boolean(
   process.env.VERCEL_ENV || 
   process.env.NOW_REGION || 
   process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  process.env.LAMBDA_TASK_ROOT ||
   process.env.FUNCTION_NAME
 );
 
-if (!isServerless && process.env.NODE_ENV !== 'test') {
+if (!isServerless && process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
