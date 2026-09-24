@@ -1,5 +1,5 @@
-import { callWithFallback, extractJsonFromText } from '../api/_lib/aiProviderRouter';
-import { verifyAuth } from '../api/_lib/auth';
+import { callWithFallback, extractJsonFromText } from './_lib/aiProviderRouter';
+import { verifyAuth } from './_lib/auth';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
