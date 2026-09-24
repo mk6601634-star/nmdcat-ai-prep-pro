@@ -87,7 +87,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Normalize URL paths for Vercel Serverless Function proxy routing
 app.use((req, res, next) => {
-  const matchedPath = req.headers["x-matched-path"] as string;
+  const matchedPath = (req.headers["x-matched-path"] || req.headers["x-forwarded-uri"]) as string;
   if (matchedPath && matchedPath.startsWith("/api")) {
     req.url = matchedPath;
   } else if (!req.url.startsWith("/api")) {
@@ -96,8 +96,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Root API Endpoint
+app.get(["/api", "/api/"], (_req, res) => {
+  res.json({
+    status: "ok",
+    message: "NMDCAT Prep Pro API Gateway is operational",
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint (Publicly accessible)
-app.get("/api/health", (_req, res) => {
+app.get(["/api/health", "/health"], (_req, res) => {
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
@@ -3487,18 +3496,28 @@ app.use((err: any, _req: any, res: any, _next: any) => {
 // Vite Integration for Dev / Production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    // @ts-ignore
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const vitePkg = "vite";
+      // @ts-ignore
+      const { createServer: createViteServer } = await import(vitePkg);
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn("[Server] Vite dev middleware not initialized:", e);
+    }
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send("Not Found");
+      }
     });
   }
 
