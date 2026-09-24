@@ -1,5 +1,5 @@
-import { callWithFallback } from './_lib/aiProviderRouter';
-import { verifyAuth } from './_lib/auth';
+import { callWithFallback } from './_lib/aiProviderRouter.js';
+import { verifyAuth } from './_lib/auth.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
