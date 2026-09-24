@@ -82,13 +82,35 @@ async function verifyFirebaseToken(token: string, projectId: string): Promise<an
   return payload;
 }
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// Safe serverless body parsing (prevents hanging when req.body is pre-parsed by Vercel)
+app.use((req, res, next) => {
+  if (req.body !== undefined && typeof req.body === "object") {
+    return next();
+  }
+  express.json({ limit: "50mb" })(req, res, (err) => {
+    if (err) return next(err);
+    if (req.body !== undefined && typeof req.body === "object") {
+      return next();
+    }
+    express.urlencoded({ limit: "50mb", extended: true })(req, res, next);
+  });
+});
 
 // Normalize URL paths for Vercel Serverless Function proxy routing
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
+  const routeMatches = req.headers["x-now-route-matches"] as string;
+  if (routeMatches) {
+    try {
+      const params = new URLSearchParams(routeMatches);
+      const subpath = params.get("1");
+      if (subpath) {
+        req.url = "/api/" + subpath;
+      }
+    } catch {}
+  }
+  
   const matchedPath = (req.headers["x-matched-path"] || req.headers["x-forwarded-uri"]) as string;
-  if (matchedPath && matchedPath.startsWith("/api")) {
+  if (matchedPath && matchedPath.startsWith("/api") && matchedPath !== "/api" && matchedPath !== "/api/") {
     req.url = matchedPath;
   } else if (!req.url.startsWith("/api")) {
     req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
