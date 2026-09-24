@@ -333,7 +333,9 @@ export const AiTutor: React.FC<AiTutorProps> = ({
               context: contextSummary,
               messages: updatedMessages.map(m => ({
                 sender: m.sender,
-                text: m.text
+                role: m.sender === 'user' ? 'user' : 'assistant',
+                text: m.text,
+                content: m.text
               })),
               masteryState
             })
