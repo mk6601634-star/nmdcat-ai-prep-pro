@@ -3514,58 +3514,8 @@ app.use((err: any, _req: any, res: any, _next: any) => {
     details: err?.message || String(err)
   });
 });
-
-// Vite Integration for Dev / Production
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    try {
-      const vitePkg = "vite";
-      // @ts-ignore
-      const { createServer: createViteServer } = await import(vitePkg);
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-    } catch (e) {
-      console.warn("[Server] Vite dev middleware not initialized:", e);
-    }
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      const indexPath = path.join(distPath, "index.html");
-      if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        res.status(404).send("Not Found");
-      }
-    });
-  }
-
-  app.listen(PORT, HOST, () => {
-    const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
-    console.log(`NMDCAT Prep Pro Server running on http://${displayHost}:${PORT}`);
-    if (HOST !== '0.0.0.0' && HOST !== 'localhost') {
-      console.log(`Note: ensure ${HOST} resolves to this machine (e.g. via hosts file mapping to 127.0.0.1) before opening the URL.`);
-    }
-  });
-}
-
-const isServerless = Boolean(
-  process.env.VERCEL || 
-  process.env.VERCEL_ENV || 
-  process.env.NOW_REGION || 
-  process.env.AWS_LAMBDA_FUNCTION_NAME ||
-  process.env.LAMBDA_TASK_ROOT ||
-  process.env.FUNCTION_NAME
-);
-
-if (!isServerless && process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
-  startServer();
-}
-
 export default app;
 export { app };
+
 
 
