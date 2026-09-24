@@ -85,11 +85,13 @@ export class GeminiProvider implements AIProvider {
 
     const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
     const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
-    const candidateModel = modelId || process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const candidateModel = modelId || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const modelsToTry = [
       candidateModel,
-      ...(candidateModel !== 'gemini-3.5-flash-lite' ? ['gemini-3.5-flash-lite'] : []),
-    ];
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+    ].filter((v, i, a) => a.indexOf(v) === i);
 
     let contents: any;
     if (options.image) {
@@ -180,7 +182,7 @@ export class GeminiProvider implements AIProvider {
     }
     const start = Date.now();
     try {
-      await this.generateText({ prompt: 'Ping: reply with "pong"', maxTokens: 10 }, 'gemini-3.5-flash-lite');
+      await this.generateText({ prompt: 'Ping: reply with "pong"', maxTokens: 10 }, 'gemini-2.5-flash');
       return { available: true, latencyMs: Date.now() - start };
     } catch (err: any) {
       return { available: false, latencyMs: Date.now() - start, error: err.message };
@@ -362,19 +364,18 @@ export class GroqProvider implements AIProvider {
     const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
     const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
 
-    const primaryModel = (modelId || process.env.GROQ_MODEL || process.env.FALLBACK_MODEL || 'openai/gpt-oss-20b')
+    const primaryModel = (modelId || process.env.GROQ_MODEL || (process.env.FALLBACK_MODEL && !process.env.FALLBACK_MODEL.includes('compound') ? process.env.FALLBACK_MODEL : '') || 'openai/gpt-oss-20b')
       .trim()
       .replace(/[\r\n\t]/g, '');
 
-    // Ordered list of models to try if the configured one fails (e.g. 404 model not found)
+    // Verified ordered list of working Groq models
     const modelsToTry = [
       primaryModel,
-      ...(primaryModel !== 'openai/gpt-oss-20b' ? ['openai/gpt-oss-20b'] : []),
+      'openai/gpt-oss-20b',
       'qwen/qwen3.8-27b',
       'openai/gpt-oss-120b',
-      'llama-3.3-70b-versatile',
-      'groq/compound-mini'
-    ].filter((v, i, a) => a.indexOf(v) === i);
+      'allam-2-7b',
+    ].filter((v, i, a) => a.indexOf(v) === i && v.length > 0);
 
     const messages: any[] = [];
     let promptText = options.prompt;
@@ -436,11 +437,11 @@ export class GroqProvider implements AIProvider {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(12000),
+            signal: AbortSignal.timeout(15000),
           });
 
           if (!res.ok) {
-            const errBody = await res.text().catch(() => '');
+            let errBody = await res.text().catch(() => '');
 
             // If 400 error was caused by response_format, retry once without it
             if (res.status === 400 && requestBody.response_format) {
@@ -452,15 +453,16 @@ export class GroqProvider implements AIProvider {
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(requestBody),
-                signal: AbortSignal.timeout(12000),
+                signal: AbortSignal.timeout(15000),
               });
+              if (!res.ok) {
+                errBody = await res.text().catch(() => '');
+              }
             }
 
             if (!res.ok) {
-              const finalErr = await res.text().catch(() => '');
-
               // If model doesn't exist (404), try next model in candidate list
-              if (res.status === 404 || finalErr.includes('model_not_found')) {
+              if (res.status === 404 || errBody.includes('model_not_found') || errBody.includes('does not exist')) {
                 console.warn(`[GroqProvider] Model '${candidateModel}' not found. Trying next candidate model...`);
                 continue;
               }
@@ -470,10 +472,11 @@ export class GroqProvider implements AIProvider {
                 continue;
               } else if (res.status === 401 || res.status === 403) {
                 setKeyCooldown(apiKey, 3600 * 1000);
-                throw new Error(`Groq Authentication Error (${res.status}): ${finalErr || res.statusText}`);
+                throw new Error(`Groq Authentication Error (${res.status}): ${errBody || res.statusText}`);
               }
 
-              throw new Error(`Groq API Error (${res.status}): ${finalErr || res.statusText}`);
+              console.warn(`[GroqProvider] Model '${candidateModel}' error (${res.status}): ${errBody.slice(0, 100)}. Trying fallback model...`);
+              continue;
             }
           }
 
@@ -502,7 +505,6 @@ export class GroqProvider implements AIProvider {
           if (isConfigurationError(err)) throw err;
         }
       }
-      setKeyCooldown(apiKey, 5000);
     }
 
     throw lastError || new Error(`Groq generation failed across all keys and models.`);
@@ -514,7 +516,7 @@ export class GroqProvider implements AIProvider {
     }
     const start = Date.now();
     try {
-      await this.generateText({ prompt: 'Ping', maxTokens: 10 }, 'groq/compound-mini');
+      await this.generateText({ prompt: 'Ping', maxTokens: 10 }, 'openai/gpt-oss-20b');
       return { available: true, latencyMs: Date.now() - start };
     } catch (err: any) {
       return { available: false, latencyMs: Date.now() - start, error: err.message };

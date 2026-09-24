@@ -18,7 +18,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 // DEV_HOST can be used locally to bind the server to a hostname (e.g. directed-spirit-9ds98.firebaseapp.com)
 const HOST = process.env.DEV_HOST || process.env.HOST || '0.0.0.0';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 // Get Firebase Project ID
 let firebaseProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;

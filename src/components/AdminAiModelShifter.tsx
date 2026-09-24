@@ -95,9 +95,9 @@ export const AdminAiModelShifter: React.FC<AdminAiModelShifterProps> = ({ curren
 
   const [selectedMode, setSelectedMode] = useState<AIMode>('auto');
   const [selectedModels, setSelectedModels] = useState<Record<AIProviderId, string>>({
-    gemini: 'gemini-3.5-flash-lite',
+    gemini: 'gemini-2.5-flash',
     cerebras: 'llama3.1-8b',
-    groq: 'groq/compound-mini',
+    groq: 'openai/gpt-oss-20b',
     longcat: 'longcat-default'
   });
   const [fallbackEnabled, setFallbackEnabled] = useState<boolean>(true);

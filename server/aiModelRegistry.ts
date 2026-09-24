@@ -14,39 +14,17 @@ import { providersMap } from './aiProviders.ts';
 
 // Centralized Model Registry
 export const MODEL_REGISTRY: AIModelDefinition[] = [
-  // Gemini Models
+  // Gemini Models (Official Google Gen AI Models)
   {
-    id: 'gemini-3.5-flash-lite',
+    id: 'gemini-2.5-flash',
     provider: 'gemini',
-    name: 'Gemini 3.5 Flash-Lite (High Speed)',
+    name: 'Gemini 2.5 Flash (Production Default)',
     capabilities: { text: true, json: true, vision: true, fastInference: true, deepReasoning: true },
     contextLimit: 1048576,
     supportsStructuredOutput: true,
     isEnabled: true,
     recommendedTasks: ['prism', 'doubt_solver', 'explanation', 'bulk_mcq'],
     description: 'Ultra-fast multimodal reasoning with massive context capacity.',
-  },
-  {
-    id: 'gemini-3.6-flash',
-    provider: 'gemini',
-    name: 'Gemini 3.6 Flash (Production)',
-    capabilities: { text: true, json: true, vision: true, fastInference: true, deepReasoning: true },
-    contextLimit: 1048576,
-    supportsStructuredOutput: true,
-    isEnabled: true,
-    recommendedTasks: ['prism', 'doubt_solver', 'explanation'],
-    description: 'Flagship speed-to-intelligence balance for high-yield medical reasoning.',
-  },
-  {
-    id: 'gemini-2.5-flash',
-    provider: 'gemini',
-    name: 'Gemini 2.5 Flash',
-    capabilities: { text: true, json: true, vision: true, fastInference: true, deepReasoning: true },
-    contextLimit: 1048576,
-    supportsStructuredOutput: true,
-    isEnabled: true,
-    recommendedTasks: ['doubt_solver', 'explanation'],
-    description: 'Reliable fast multimodal generation for tutor chat and diagnostics.',
   },
   {
     id: 'gemini-2.5-pro',
@@ -58,6 +36,28 @@ export const MODEL_REGISTRY: AIModelDefinition[] = [
     isEnabled: true,
     recommendedTasks: ['prism', 'doubt_solver'],
     description: 'High-precision multi-step scientific reasoning engine.',
+  },
+  {
+    id: 'gemini-2.0-flash',
+    provider: 'gemini',
+    name: 'Gemini 2.0 Flash',
+    capabilities: { text: true, json: true, vision: true, fastInference: true, deepReasoning: true },
+    contextLimit: 1048576,
+    supportsStructuredOutput: true,
+    isEnabled: true,
+    recommendedTasks: ['doubt_solver', 'explanation'],
+    description: 'Reliable fast multimodal generation for tutor chat and diagnostics.',
+  },
+  {
+    id: 'gemini-1.5-flash',
+    provider: 'gemini',
+    name: 'Gemini 1.5 Flash (Legacy Fallback)',
+    capabilities: { text: true, json: true, vision: true, fastInference: true, deepReasoning: false },
+    contextLimit: 1048576,
+    supportsStructuredOutput: true,
+    isEnabled: true,
+    recommendedTasks: ['flashcard', 'mnemonic', 'bulk_mcq'],
+    description: 'Broadly compatible legacy flash tier.',
   },
 
   // Cerebras Models
@@ -130,26 +130,15 @@ export const MODEL_REGISTRY: AIModelDefinition[] = [
     description: 'Massive 120B parameter model with 131k context window on Groq LPUs.',
   },
   {
-    id: 'groq/compound-mini',
+    id: 'allam-2-7b',
     provider: 'groq',
-    name: 'Groq Compound-Mini',
+    name: 'Groq Allam 2 7B',
     capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: false },
-    contextLimit: 131072,
+    contextLimit: 32768,
     supportsStructuredOutput: true,
     isEnabled: true,
-    recommendedTasks: ['flashcard', 'mnemonic', 'explanation'],
-    description: 'Compound routing model on Groq.',
-  },
-  {
-    id: 'groq/compound',
-    provider: 'groq',
-    name: 'Groq Compound (Large)',
-    capabilities: { text: true, json: true, vision: false, fastInference: true, deepReasoning: true },
-    contextLimit: 131072,
-    supportsStructuredOutput: true,
-    isEnabled: true,
-    recommendedTasks: ['prism', 'bulk_mcq'],
-    description: 'Large compound model on Groq.',
+    recommendedTasks: ['flashcard', 'mnemonic'],
+    description: 'Fast lightweight model on Groq.',
   },
 
   // LongCat Models
@@ -179,15 +168,15 @@ export const MODEL_REGISTRY: AIModelDefinition[] = [
 
 // Active Server Configuration (In-Memory with Admin Updates)
 export const activeConfig: AIPlatformConfig = {
-  mode: 'groq', // Gemini is paused, Groq is the exclusive primary provider
+  mode: (process.env.AI_MODE as AIMode) || 'auto',
   defaultProvider: 'groq',
   defaultModel: {
-    gemini: (process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite').trim().replace(/[\r\n\t]/g, ''),
+    gemini: (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim().replace(/[\r\n\t]/g, ''),
     cerebras: (process.env.CEREBRAS_MODEL || 'llama3.1-8b').trim().replace(/[\r\n\t]/g, ''),
-    groq: (process.env.GROQ_MODEL || process.env.FALLBACK_MODEL || 'openai/gpt-oss-20b').trim().replace(/[\r\n\t]/g, ''),
+    groq: (process.env.GROQ_MODEL || (process.env.FALLBACK_MODEL && !process.env.FALLBACK_MODEL.includes('compound') ? process.env.FALLBACK_MODEL : '') || 'openai/gpt-oss-20b').trim().replace(/[\r\n\t]/g, ''),
     longcat: (process.env.LONGCAT_MODEL || 'longcat-default').trim().replace(/[\r\n\t]/g, ''),
   },
-  fallbackOrder: ['groq', 'cerebras', 'longcat'], // Gemini excluded while paused
+  fallbackOrder: ['groq', 'gemini', 'cerebras', 'longcat'],
   fallbackEnabled: process.env.FALLBACK_AI_ENABLED !== 'false',
   autoRoutingEnabled: true,
   cachingEnabled: true,

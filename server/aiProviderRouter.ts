@@ -24,6 +24,9 @@ export function extractJsonFromText(text: string): any {
 
   let cleaned = text.trim();
 
+  // 0. Strip reasoning/think tags if present from reasoning models
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
   // 1. Strip markdown code fences if present (including unclosed ```json)
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
   if (cleaned.endsWith('```')) {
@@ -135,7 +138,7 @@ export async function callWithFallback(options: AiGenerateOptions): Promise<AiGe
   }
 
   // 2. Determine execution order and model based on active mode & task routing
-  let primaryProviderId: AIProviderId = 'gemini';
+  let primaryProviderId: AIProviderId = activeConfig.defaultProvider || 'groq';
   let fallbackChain: AIProviderId[] = [...activeConfig.fallbackOrder];
 
   if (activeConfig.mode !== 'auto') {
