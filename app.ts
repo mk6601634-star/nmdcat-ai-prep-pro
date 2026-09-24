@@ -1340,6 +1340,7 @@ CRITICAL FORMATTING & TYPESETTING RULES:
     res.json({
       success: true,
       text: result.text,
+      reply: result.text,
       answer: result.text,
       provider: result.provider,
       modeUsed: mode
