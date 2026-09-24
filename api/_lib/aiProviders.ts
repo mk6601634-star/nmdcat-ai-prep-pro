@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
 import type {
   AIProviderId,
   AiGenerateOptions,
@@ -67,7 +66,7 @@ export interface AIProvider {
 }
 
 // ============================================================
-// 1. GEMINI PROVIDER ADAPTER
+// 1. GEMINI PROVIDER ADAPTER (Pure Native Fetch - Zero External Dependencies)
 // ============================================================
 export class GeminiProvider implements AIProvider {
   id: AIProviderId = 'gemini';
@@ -93,31 +92,38 @@ export class GeminiProvider implements AIProvider {
       'gemini-1.5-flash',
     ].filter((v, i, a) => a.indexOf(v) === i);
 
-    let contents: any;
+    let parts: any[] = [];
     if (options.image) {
       const cleanBase64 = options.image.base64Data.replace(/^data:image\/\w+;base64,/, '');
-      contents = {
-        parts: [
-          {
-            inlineData: {
-              mimeType: options.image.mimeType || 'image/jpeg',
-              data: cleanBase64,
-            },
-          },
-          { text: options.prompt },
-        ],
-      };
-    } else {
-      contents = options.prompt;
+      parts.push({
+        inlineData: {
+          mimeType: options.image.mimeType || 'image/jpeg',
+          data: cleanBase64,
+        },
+      });
     }
+    parts.push({ text: options.prompt });
 
-    const config: any = {
+    const contents = [{ parts }];
+
+    const generationConfig: any = {
       temperature: options.temperature ?? 0.7,
       maxOutputTokens: options.maxTokens ?? 4096,
     };
 
+    if (options.jsonMode) {
+      generationConfig.responseMimeType = 'application/json';
+    }
+
+    const requestBody: any = {
+      contents,
+      generationConfig,
+    };
+
     if (options.systemInstruction) {
-      config.systemInstruction = options.systemInstruction;
+      requestBody.systemInstruction = {
+        parts: [{ text: options.systemInstruction }]
+      };
     }
 
     let lastError: any = null;
@@ -125,25 +131,69 @@ export class GeminiProvider implements AIProvider {
 
     for (let k = 0; k < keysToTry.length; k++) {
       const apiKey = keysToTry[k];
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: { 'User-Agent': 'nmdcat-prep-pro-ai' },
-        },
-      });
 
       for (const currentModel of modelsToTry) {
         try {
-          const response = await ai.models.generateContent({
-            model: currentModel,
-            contents,
-            config,
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'nmdcat-prep-pro-ai',
+            },
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(25000),
           });
 
-          const text = response.text || '';
+          if (!res.ok) {
+            const errData = await res.json().catch(() => null);
+            const errMsg = errData?.error?.message || `HTTP ${res.status} ${res.statusText}`;
+
+            if (res.status === 429) {
+              setKeyCooldown(apiKey);
+              console.warn(`[GeminiProvider] Key rate limited on '${currentModel}'. Cooldown activated.`);
+              continue;
+            }
+
+            if (res.status === 400 && options.jsonMode && errMsg.includes('responseMimeType')) {
+              // Retry without responseMimeType
+              delete requestBody.generationConfig.responseMimeType;
+              const retryRes = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody),
+                signal: AbortSignal.timeout(25000),
+              });
+              if (retryRes.ok) {
+                const retryData: any = await retryRes.json();
+                const text = retryData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (text) {
+                  return {
+                    text,
+                    provider: 'gemini',
+                    model: currentModel,
+                    isFallback: k > 0 || currentModel !== candidateModel,
+                    latencyMs: Date.now() - startTime,
+                  };
+                }
+              }
+            }
+
+            if (res.status === 401 || res.status === 403 || errMsg.includes('API_KEY_INVALID')) {
+              setKeyCooldown(apiKey, 3600 * 1000);
+              throw new Error(`Gemini Authentication Error (${res.status}): ${errMsg}`);
+            }
+
+            throw new Error(`Gemini API Error (${res.status}): ${errMsg}`);
+          }
+
+          const data: any = await res.json();
+          const candidate = data?.candidates?.[0];
+          const text = candidate?.content?.parts?.[0]?.text || '';
+
           if (text) {
             const latencyMs = Date.now() - startTime;
-            const usageMetadata = (response as any)?.usageMetadata;
+            const usageMetadata = data?.usageMetadata;
 
             return {
               text,
@@ -163,7 +213,7 @@ export class GeminiProvider implements AIProvider {
         } catch (err: any) {
           lastError = err;
           if (isQuotaOrTransientError(err)) {
-            console.warn(`[GeminiProvider] Model '${currentModel}' transient error (${err?.message?.slice(0, 80)}). Trying fallback model...`);
+            console.warn(`[GeminiProvider] Model '${currentModel}' transient error (${err?.message?.slice(0, 80)}). Trying fallback...`);
           } else if (isConfigurationError(err)) {
             console.warn(`[GeminiProvider] API key [${apiKey.slice(0, 8)}...] invalid credentials.`);
             setKeyCooldown(apiKey, 3600 * 1000);
@@ -191,161 +241,7 @@ export class GeminiProvider implements AIProvider {
 }
 
 // ============================================================
-// 2. CEREBRAS PROVIDER ADAPTER (OpenAI-Compatible Ultra-Fast Inference)
-// ============================================================
-export class CerebrasProvider implements AIProvider {
-  id: AIProviderId = 'cerebras';
-  name = 'Cerebras Cloud';
-
-  isConfigured(): boolean {
-    return getApiKeys('CEREBRAS_API_KEY', 'CEREBRAS_API_KEYS').length > 0;
-  }
-
-  async generateText(options: AiGenerateOptions, modelId?: string): Promise<AiGenerateResult> {
-    const apiKeys = getApiKeys('CEREBRAS_API_KEY', 'CEREBRAS_API_KEYS');
-    if (apiKeys.length === 0) {
-      throw new Error('CEREBRAS_API_KEY is not configured in server environment.');
-    }
-
-    const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
-    const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
-    const candidateModel = modelId || process.env.CEREBRAS_MODEL || 'llama3.1-8b';
-
-    const messages: any[] = [];
-    let promptText = options.prompt;
-    let systemText = options.systemInstruction || '';
-
-    if (options.jsonMode) {
-      if (!systemText.toLowerCase().includes('json')) {
-        systemText += (systemText ? '\n' : '') + 'Respond strictly with valid JSON. Do not include markdown codeblocks or surrounding conversational text.';
-      }
-      if (!promptText.toLowerCase().includes('json')) {
-        promptText += '\nReturn output formatted strictly as valid JSON.';
-      }
-    }
-
-    if (systemText) {
-      messages.push({ role: 'system', content: systemText });
-    }
-    messages.push({ role: 'user', content: promptText });
-
-    let lastError: any = null;
-    const startTime = Date.now();
-
-    for (let k = 0; k < keysToTry.length; k++) {
-      const apiKey = keysToTry[k];
-      const requestBody: any = {
-        model: candidateModel,
-        messages,
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxTokens ?? 4096,
-      };
-
-      if (options.jsonMode) {
-        requestBody.response_format = { type: 'json_object' };
-      }
-
-      try {
-        const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(12000),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => '');
-          if (res.status === 400 && options.jsonMode && errBody.includes('response_format')) {
-            // Retry once without json_object response_format
-            delete requestBody.response_format;
-            const retryRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(requestBody),
-              signal: AbortSignal.timeout(12000),
-            });
-            if (retryRes.ok) {
-              const retryData: any = await retryRes.json();
-              const choice = retryData?.choices?.[0];
-              return {
-                text: choice?.message?.content || '',
-                provider: 'cerebras',
-                model: candidateModel,
-                isFallback: k > 0,
-                latencyMs: Date.now() - startTime,
-                usage: retryData?.usage
-                  ? {
-                      inputTokens: retryData.usage.prompt_tokens,
-                      outputTokens: retryData.usage.completion_tokens,
-                      totalTokens: retryData.usage.total_tokens,
-                    }
-                  : undefined,
-              };
-            }
-          }
-
-          if (res.status === 429) {
-            console.warn(`[CerebrasProvider] Key hit 429 rate limit. Setting cooldown.`);
-            setKeyCooldown(apiKey);
-          } else if (res.status === 401 || res.status === 403) {
-            setKeyCooldown(apiKey, 3600 * 1000);
-            throw new Error(`Cerebras Authentication Error (${res.status}): ${errBody || res.statusText}`);
-          }
-
-          throw new Error(`Cerebras API Error (${res.status}): ${errBody || res.statusText}`);
-        }
-
-        const data: any = await res.json();
-        const choice = data?.choices?.[0];
-        const text = choice?.message?.content || '';
-
-        if (text) {
-          return {
-            text,
-            provider: 'cerebras',
-            model: candidateModel,
-            isFallback: k > 0,
-            latencyMs: Date.now() - startTime,
-            usage: data?.usage
-              ? {
-                  inputTokens: data.usage.prompt_tokens,
-                  outputTokens: data.usage.completion_tokens,
-                  totalTokens: data.usage.total_tokens,
-                }
-              : undefined,
-          };
-        }
-      } catch (err: any) {
-        lastError = err;
-        if (isConfigurationError(err)) throw err;
-      }
-    }
-
-    throw lastError || new Error(`Cerebras generation failed for model '${candidateModel}'.`);
-  }
-
-  async healthCheck(): Promise<{ available: boolean; latencyMs: number; error?: string }> {
-    if (!this.isConfigured()) {
-      return { available: false, latencyMs: 0, error: 'CEREBRAS_API_KEY not configured' };
-    }
-    const start = Date.now();
-    try {
-      await this.generateText({ prompt: 'Ping', maxTokens: 10 }, 'llama3.1-8b');
-      return { available: true, latencyMs: Date.now() - start };
-    } catch (err: any) {
-      return { available: false, latencyMs: Date.now() - start, error: err.message };
-    }
-  }
-}
-
-// ============================================================
-// 3. GROQ PROVIDER ADAPTER (OpenAI-Compatible Fast Inference)
+// 2. GROQ PROVIDER ADAPTER (OpenAI-Compatible Fast Inference)
 // ============================================================
 export class GroqProvider implements AIProvider {
   id: AIProviderId = 'groq';
@@ -368,7 +264,6 @@ export class GroqProvider implements AIProvider {
       .trim()
       .replace(/[\r\n\t]/g, '');
 
-    // Verified ordered list of working Groq models
     const modelsToTry = [
       primaryModel,
       'openai/gpt-oss-20b',
@@ -437,13 +332,12 @@ export class GroqProvider implements AIProvider {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(18000),
           });
 
           if (!res.ok) {
             let errBody = await res.text().catch(() => '');
 
-            // If 400 error was caused by response_format, retry once without it
             if (res.status === 400 && requestBody.response_format) {
               delete requestBody.response_format;
               res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -453,7 +347,7 @@ export class GroqProvider implements AIProvider {
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(requestBody),
-                signal: AbortSignal.timeout(15000),
+                signal: AbortSignal.timeout(18000),
               });
               if (!res.ok) {
                 errBody = await res.text().catch(() => '');
@@ -461,7 +355,6 @@ export class GroqProvider implements AIProvider {
             }
 
             if (!res.ok) {
-              // If model doesn't exist (404), try next model in candidate list
               if (res.status === 404 || errBody.includes('model_not_found') || errBody.includes('does not exist')) {
                 console.warn(`[GroqProvider] Model '${candidateModel}' not found. Trying next candidate model...`);
                 continue;
@@ -524,173 +417,13 @@ export class GroqProvider implements AIProvider {
   }
 }
 
-// ============================================================
-// 4. LONGCAT PROVIDER ADAPTER (Custom / OpenAI-Compatible Provider)
-// ============================================================
-export class LongCatProvider implements AIProvider {
-  id: AIProviderId = 'longcat';
-  name = 'LongCat AI';
-
-  getBaseUrl(): string {
-    return (process.env.LONGCAT_BASE_URL || 'https://api.longcat.ai/v1').replace(/\/+$/, '');
-  }
-
-  isConfigured(): boolean {
-    return getApiKeys('LONGCAT_API_KEY', 'LONGCAT_API_KEYS').length > 0;
-  }
-
-  async generateText(options: AiGenerateOptions, modelId?: string): Promise<AiGenerateResult> {
-    const apiKeys = getApiKeys('LONGCAT_API_KEY', 'LONGCAT_API_KEYS');
-    if (apiKeys.length === 0) {
-      throw new Error('LONGCAT_API_KEY is not configured in server environment.');
-    }
-
-    const availableKeys = apiKeys.filter(k => !isKeyCoolingDown(k));
-    const keysToTry = availableKeys.length > 0 ? availableKeys : [apiKeys[0]];
-    const candidateModel = modelId || process.env.LONGCAT_MODEL || 'longcat-default';
-    const baseUrl = this.getBaseUrl();
-
-    const messages: any[] = [];
-    let promptText = options.prompt;
-    let systemText = options.systemInstruction || '';
-
-    if (options.jsonMode) {
-      if (!systemText.toLowerCase().includes('json')) {
-        systemText += (systemText ? '\n' : '') + 'Respond strictly with valid JSON. Do not include markdown codeblocks or conversational text.';
-      }
-      if (!promptText.toLowerCase().includes('json')) {
-        promptText += '\nReturn output formatted strictly as valid JSON.';
-      }
-    }
-
-    if (systemText) {
-      messages.push({ role: 'system', content: systemText });
-    }
-    messages.push({ role: 'user', content: promptText });
-
-    let lastError: any = null;
-    const startTime = Date.now();
-
-    for (let k = 0; k < keysToTry.length; k++) {
-      const apiKey = keysToTry[k];
-      const requestBody: any = {
-        model: candidateModel,
-        messages,
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxTokens ?? 4096,
-      };
-
-      if (options.jsonMode) {
-        requestBody.response_format = { type: 'json_object' };
-      }
-
-      try {
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(12000),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => '');
-          if (res.status === 400 && requestBody.response_format) {
-            delete requestBody.response_format;
-            const retryRes = await fetch(`${baseUrl}/chat/completions`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(requestBody),
-              signal: AbortSignal.timeout(12000),
-            });
-            if (retryRes.ok) {
-              const retryData: any = await retryRes.json();
-              const choice = retryData?.choices?.[0];
-              return {
-                text: choice?.message?.content || '',
-                provider: 'longcat',
-                model: candidateModel,
-                isFallback: k > 0,
-                latencyMs: Date.now() - startTime,
-                usage: retryData?.usage
-                  ? {
-                      inputTokens: retryData.usage.prompt_tokens,
-                      outputTokens: retryData.usage.completion_tokens,
-                      totalTokens: retryData.usage.total_tokens,
-                    }
-                  : undefined,
-              };
-            }
-          }
-
-          if (res.status === 429) {
-            console.warn(`[LongCatProvider] Key hit 429 rate limit. Setting cooldown.`);
-            setKeyCooldown(apiKey);
-          } else if (res.status === 401 || res.status === 403) {
-            setKeyCooldown(apiKey, 3600 * 1000);
-            throw new Error(`LongCat Authentication Error (${res.status}): ${errBody || res.statusText}`);
-          }
-
-          throw new Error(`LongCat API Error (${res.status}): ${errBody || res.statusText}`);
-        }
-
-        const data: any = await res.json();
-        const choice = data?.choices?.[0];
-        const text = choice?.message?.content || '';
-
-        if (text) {
-          return {
-            text,
-            provider: 'longcat',
-            model: candidateModel,
-            isFallback: k > 0,
-            latencyMs: Date.now() - startTime,
-            usage: data?.usage
-              ? {
-                  inputTokens: data.usage.prompt_tokens,
-                  outputTokens: data.usage.completion_tokens,
-                  totalTokens: data.usage.total_tokens,
-                }
-              : undefined,
-          };
-        }
-      } catch (err: any) {
-        lastError = err;
-        if (isConfigurationError(err)) throw err;
-      }
-    }
-
-    throw lastError || new Error(`LongCat generation failed for model '${candidateModel}'.`);
-  }
-
-  async healthCheck(): Promise<{ available: boolean; latencyMs: number; error?: string }> {
-    if (!this.isConfigured()) {
-      return { available: false, latencyMs: 0, error: 'LONGCAT_API_KEY not configured' };
-    }
-    const start = Date.now();
-    try {
-      await this.generateText({ prompt: 'Ping', maxTokens: 10 }, 'longcat-default');
-      return { available: true, latencyMs: Date.now() - start };
-    } catch (err: any) {
-      return { available: false, latencyMs: Date.now() - start, error: err.message };
-    }
-  }
-}
-
 // Provider Singleton Instances
 export const geminiProvider = new GeminiProvider();
-export const cerebrasProvider = new CerebrasProvider();
 export const groqProvider = new GroqProvider();
-export const longcatProvider = new LongCatProvider();
 
 export const providersMap: Record<AIProviderId, AIProvider> = {
   gemini: geminiProvider,
-  cerebras: cerebrasProvider,
+  cerebras: groqProvider as any,
   groq: groqProvider,
-  longcat: longcatProvider,
+  longcat: groqProvider as any,
 };
