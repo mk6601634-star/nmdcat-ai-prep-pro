@@ -9,7 +9,6 @@ import { activeConfig, MODEL_REGISTRY, usageMetrics } from "./server/aiModelRegi
 import { providersMap } from "./server/aiProviders.ts";
 import type { AIProviderId, AIMode } from "./server/aiTypes.ts";
 import { validateAndEnrichPrismClaim } from "./src/components/prism/prismSuperlativeValidator.ts";
-import pdfParse from "pdf-parse";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -1897,8 +1896,12 @@ app.post("/api/admin/extract-past-paper", requireAdmin, async (req, res) => {
       const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, "");
       const pdfBuffer = Buffer.from(base64Data, "base64");
       try {
-        const pdfData = await (pdfParse as any)(pdfBuffer);
-        sourceText = pdfData.text || "";
+        const pdfParseModule = await import("pdf-parse/lib/pdf-parse.js").catch(() => null) || await import("pdf-parse").catch(() => null);
+        const parseFn = pdfParseModule?.default || pdfParseModule;
+        if (typeof parseFn === "function") {
+          const pdfData = await parseFn(pdfBuffer);
+          sourceText = pdfData.text || "";
+        }
       } catch (pdfErr: any) {
         console.warn("PDF parser error:", pdfErr?.message);
       }
