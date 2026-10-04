@@ -148,6 +148,13 @@ service cloud.firestore {
       allow delete: if isUserDelete();
     }
 
+    match /topicMasterySessions/{docId} {
+      allow create: if isUserCreate();
+      allow read: if isUserRead();
+      allow update: if isUserUpdate();
+      allow delete: if isUserDelete();
+    }
+
     match /adminUsers/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdminUser());
       allow write: if isSuperAdmin();

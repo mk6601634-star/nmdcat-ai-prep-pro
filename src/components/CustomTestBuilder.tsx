@@ -50,9 +50,7 @@ import {
 } from 'lucide-react';
 import { MCQQuestion, SubjectType, SavedMistake, ExamAttempt, SyllabusTopic } from '../types';
 import { generateExam } from '../utils/nmdcatExamGenerator';
-import { matchQuestionsFromBank } from '../utils/topicMatcher';
 import { PMDC_SYLLABUS_TOPICS } from '../data/nmdcatData';
-import { fetchPublishedMcqsForTopic, fetchRandomPublishedMcqs } from '../lib/firestoreService';
 import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
 import NMDCAT_CONFIG from '../constants/nmdcatConfig';
 

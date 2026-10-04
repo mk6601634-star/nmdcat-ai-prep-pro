@@ -704,5 +704,7 @@ export interface UserPresenceRecord {
   platform?: string;
 }
 
+export * from './types/topicMastery';
+
 
 

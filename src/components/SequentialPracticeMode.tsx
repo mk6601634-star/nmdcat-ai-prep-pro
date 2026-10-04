@@ -35,7 +35,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { MCQQuestion, SubjectType } from '../types';
-import { matchQuestionsFromBank } from '../utils/topicMatcher';
+import { filterCanonicalMCQs } from '../lib/mcqRetrievalService';
 import { FormattedMathContent } from './FormattedMathContent';
 
 interface SequentialPracticeModeProps {
@@ -335,12 +335,13 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
   // Generate session questions matching objective topic
   const sessionQuestions = React.useMemo(() => {
     if (!activeObjective) return [];
-    return matchQuestionsFromBank(questionBank, {
-      subject: selectedSubject,
-      chapter: activeObjective.chapter,
-      topic: activeObjective.topic || activeObjective.subtopic,
-      limit: 5
+    const result = filterCanonicalMCQs(questionBank, {
+      subjectId: selectedSubject,
+      chapterId: activeObjective.chapter,
+      topicId: activeObjective.topic || activeObjective.subtopic,
+      count: 5
     });
+    return result.questions;
   }, [activeObjective, selectedSubject, questionBank]);
 
   // Handle MCQ Option Choice
@@ -672,14 +673,28 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
           {/* STEP 4: MCQS PRACTICE SESSION */}
           {currentStep === 4 && (
             <div className="space-y-4 max-w-2xl mx-auto">
-              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
-                <span>Question {activeMcqIndex + 1} of {sessionQuestions.length}</span>
-                <span>Score: <strong className="text-emerald-400">{sessionScore.correct} / {sessionScore.total}</strong></span>
-              </div>
+              {sessionQuestions.length === 0 ? (
+                <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 text-center space-y-3">
+                  <AlertCircle className="w-8 h-8 text-amber-400 mx-auto" />
+                  <p className="text-white font-bold">No published MCQs found for this specific objective.</p>
+                  <p className="text-slate-400 text-xs">Questions for this specific objective are currently undergoing editorial indexing. Zero fallback applied to protect syllabus integrity.</p>
+                  <button
+                    onClick={() => setCurrentStep(5)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs"
+                  >
+                    Skip to AI Review
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
+                    <span>Question {activeMcqIndex + 1} of {sessionQuestions.length}</span>
+                    <span>Score: <strong className="text-emerald-400">{sessionScore.correct} / {sessionScore.total}</strong></span>
+                  </div>
 
-              {sessionQuestions[activeMcqIndex] && (
-                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 text-xs">
-                  <FormattedMathContent content={sessionQuestions[activeMcqIndex].question} className="font-bold text-white text-sm leading-relaxed" />
+                  {sessionQuestions[activeMcqIndex] && (
+                    <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 text-xs">
+                      <FormattedMathContent content={sessionQuestions[activeMcqIndex].question} className="font-bold text-white text-sm leading-relaxed" />
 
                   <div className="space-y-2">
                     {sessionQuestions[activeMcqIndex].options.map((opt, idx) => {
@@ -728,8 +743,10 @@ export const SequentialPracticeMode: React.FC<SequentialPracticeModeProps> = ({
                   )}
                 </div>
               )}
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           {/* STEP 5: AI REVIEW */}
           {currentStep === 5 && (

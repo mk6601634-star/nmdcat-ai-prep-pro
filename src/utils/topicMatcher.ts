@@ -1,5 +1,6 @@
 import { MCQQuestion, SubjectType } from '../types';
 import { toCanonicalSubjectId, assertSubjectIntegrity } from './subjectTaxonomy';
+import { filterCanonicalMCQs } from '../lib/mcqRetrievalService';
 
 /**
  * Tokenize string removing punctuation, special characters, and common stop words
@@ -73,8 +74,8 @@ export function scoreMcqMatch(
 }
 
 /**
- * Filter and sort question bank for matching questions with automatic fallback.
- * STRICT INVARIANT: All returned questions MUST match the requested subject.
+ * Filter and sort question bank for matching questions using Canonical MCQ Retrieval Engine.
+ * STRICT INVARIANT: All returned questions MUST match the requested subject and topic with ZERO fallback.
  */
 export function matchQuestionsFromBank(
   questionBank: MCQQuestion[],
@@ -90,46 +91,14 @@ export function matchQuestionsFromBank(
 
   const { subject, chapter, topic, difficulty, limit } = options;
 
-  // Pre-filter candidate pool by canonical subject to prevent any cross-subject leakage
-  let candidatePool = questionBank;
-  if (subject) {
-    const targetSubId = toCanonicalSubjectId(subject);
-    candidatePool = questionBank.filter(q => toCanonicalSubjectId(q.subject) === targetSubId);
-  }
+  const result = filterCanonicalMCQs(questionBank, {
+    subjectId: subject,
+    chapterId: chapter,
+    topicId: topic,
+    difficulty: difficulty === 'Any' || difficulty === 'Mixed' ? undefined : difficulty,
+    count: limit || 50,
+    allowShuffle: false
+  });
 
-  if (candidatePool.length === 0) return [];
-
-  // 1. Score each question
-  const scored = candidatePool
-    .map(q => ({ q, score: scoreMcqMatch(q, subject, chapter, topic) }))
-    .filter(item => item.score > 0.5)
-    .sort((a, b) => b.score - a.score);
-
-  let results = scored.map(item => item.q);
-
-  // 2. Fallback to candidatePool (which is ALREADY strictly filtered by subject)
-  if (results.length === 0) {
-    results = [...candidatePool];
-  }
-
-  // 3. Apply difficulty filter if specified and enough questions remain
-  if (difficulty && difficulty !== 'Any' && difficulty !== 'Mixed') {
-    const diffFiltered = results.filter(
-      q => (q.difficulty || '').toLowerCase() === difficulty.toLowerCase()
-    );
-    if (diffFiltered.length >= 3) {
-      results = diffFiltered;
-    }
-  }
-
-  if (limit && limit > 0) {
-    results = results.slice(0, limit);
-  }
-
-  // Hard Invariant Final Filter
-  if (subject) {
-    results = results.filter(q => assertSubjectIntegrity(q.subject, subject));
-  }
-
-  return results;
+  return result.questions;
 }

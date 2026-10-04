@@ -1,9 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import UiCard from './UiCard';
 import { PMDC_SYLLABUS_TOPICS } from '../data/nmdcatData';
-import { fetchPublishedMcqsForTopic } from '../lib/firestoreService';
-import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
-import { matchQuestionsFromBank, scoreMcqMatch } from '../utils/topicMatcher';
+import { getCanonicalMCQs, filterCanonicalMCQs } from '../lib/mcqRetrievalService';
 import { aiFetch } from '../lib/aiRequest';
 import { MCQQuestion } from '../types';
 import {
@@ -130,30 +128,35 @@ export const TopicQuizBuilder: React.FC<TopicQuizBuilderProps> = ({
   // 4. Compute real-time matching questions from questionBank
   const matchingDbQuestions = useMemo(() => {
     if (!questionBank || questionBank.length === 0) return [];
-    return matchQuestionsFromBank(questionBank, {
-      subject: selectedSubject,
-      chapter: selectedChapter,
-      topic: selectedTopic,
-      difficulty: difficulty === 'Any' ? undefined : difficulty
-    });
+    return filterCanonicalMCQs(questionBank, {
+      subjectId: selectedSubject,
+      chapterId: selectedChapter,
+      topicId: selectedTopic || undefined,
+      difficulty: difficulty === 'Any' ? undefined : difficulty,
+      count: 100,
+      allowShuffle: false
+    }).questions;
   }, [questionBank, selectedSubject, selectedChapter, selectedTopic, difficulty]);
 
   // Count helper for chapter badge
   const getChapterQuestionCount = (chapterName: string) => {
-    return matchQuestionsFromBank(questionBank, {
-      subject: selectedSubject,
-      chapter: chapterName
-    }).length;
+    return filterCanonicalMCQs(questionBank, {
+      subjectId: selectedSubject,
+      chapterId: chapterName,
+      count: 100,
+      allowShuffle: false
+    }).availableCount;
   };
 
   // Count helper for topic badge
   const getTopicQuestionCount = (topicName: string) => {
-    const topicMatches = matchQuestionsFromBank(questionBank, {
-      subject: selectedSubject,
-      chapter: selectedChapter,
-      topic: topicName
-    }).length;
-    return topicMatches > 0 ? topicMatches : getChapterQuestionCount(selectedChapter);
+    return filterCanonicalMCQs(questionBank, {
+      subjectId: selectedSubject,
+      chapterId: selectedChapter,
+      topicId: topicName,
+      count: 100,
+      allowShuffle: false
+    }).availableCount;
   };
 
   // Handle Start Quiz

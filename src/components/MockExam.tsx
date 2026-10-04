@@ -3,7 +3,6 @@ import NMDCAT_CONFIG from '../constants/nmdcatConfig';
 import { generateExam } from '../utils/nmdcatExamGenerator';
 import UiCard from './UiCard';
 import { MCQQuestion, ExamAttempt, SavedMistake, SubjectType } from '../types';
-import { fetchRandomPublishedMcqs } from '../lib/firestoreService';
 import { getCanonicalMCQs } from '../lib/mcqRetrievalService';
 import { 
   Flame, 

@@ -50,7 +50,8 @@ import {
   GeneratedQuestion,
   ImportJob,
   AiConversation,
-  PastPaper
+  PastPaper,
+  TopicMasterySession
 } from '../types';
 import type { PrismSession } from '../components/prism/prismTypes';
 
@@ -2624,5 +2625,172 @@ export async function syncFirestoreNow(): Promise<boolean> {
     return false;
   }
 }
+
+// ==========================================
+// TOPIC MASTERY SESSIONS PERSISTENCE
+// ==========================================
+
+export const TOPIC_MASTERY_COLLECTION = 'topicMasterySessions';
+
+/**
+ * Save or update a Topic Mastery Session in Firestore and localStorage
+ */
+export async function saveTopicMasterySession(
+  userId: string,
+  session: TopicMasterySession
+): Promise<{ success: boolean; sessionId: string; error?: string }> {
+  if (!userId) return { success: false, sessionId: session.id, error: 'User ID is required' };
+
+  const sanitized = removeUndefinedFields({
+    ...session,
+    userId,
+    updatedAt: new Date().toISOString()
+  });
+
+  try {
+    const docRef = doc(db, TOPIC_MASTERY_COLLECTION, session.id);
+    await setDoc(docRef, sanitized, { merge: true });
+
+    // LocalStorage Mirroring for instant offline access
+    try {
+      const localKey = `nmdcat_topic_mastery_sessions_${userId}`;
+      const existing = localStorage.getItem(localKey);
+      const list: TopicMasterySession[] = existing ? JSON.parse(existing) : [];
+      const idx = list.findIndex(s => s.id === session.id);
+      if (idx >= 0) {
+        list[idx] = sanitized as TopicMasterySession;
+      } else {
+        list.unshift(sanitized as TopicMasterySession);
+      }
+      localStorage.setItem(localKey, JSON.stringify(list));
+    } catch {}
+
+    return { success: true, sessionId: session.id };
+  } catch (err: any) {
+    handleError('Error saving Topic Mastery session:', err);
+
+    // Still persist to localStorage fallback
+    try {
+      const localKey = `nmdcat_topic_mastery_sessions_${userId}`;
+      const existing = localStorage.getItem(localKey);
+      const list: TopicMasterySession[] = existing ? JSON.parse(existing) : [];
+      const idx = list.findIndex(s => s.id === session.id);
+      if (idx >= 0) {
+        list[idx] = sanitized as TopicMasterySession;
+      } else {
+        list.unshift(sanitized as TopicMasterySession);
+      }
+      localStorage.setItem(localKey, JSON.stringify(list));
+    } catch {}
+
+    return { success: true, sessionId: session.id };
+  }
+}
+
+/**
+ * Subscribe to all Topic Mastery sessions for a given user
+ */
+export function subscribeToUserTopicMasterySessions(
+  userId: string,
+  onUpdate: (sessions: TopicMasterySession[]) => void
+) {
+  if (!userId) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  try {
+    const q = query(
+      collection(db, TOPIC_MASTERY_COLLECTION),
+      where('userId', '==', userId)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const sessions: TopicMasterySession[] = [];
+        snapshot.forEach((d) => {
+          sessions.push(d.data() as TopicMasterySession);
+        });
+
+        // Sort by updatedAt descending
+        sessions.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+
+        // Update localStorage cache
+        try {
+          localStorage.setItem(`nmdcat_topic_mastery_sessions_${userId}`, JSON.stringify(sessions));
+        } catch {}
+
+        onUpdate(sessions);
+      },
+      (err) => {
+        handleError('Error subscribing to Topic Mastery sessions:', err);
+        // Fallback to localStorage
+        try {
+          const cached = localStorage.getItem(`nmdcat_topic_mastery_sessions_${userId}`);
+          if (cached) onUpdate(JSON.parse(cached));
+        } catch {}
+      }
+    );
+
+    return unsubscribe;
+  } catch (err) {
+    handleError('Error initializing Topic Mastery subscription:', err);
+    try {
+      const cached = localStorage.getItem(`nmdcat_topic_mastery_sessions_${userId}`);
+      if (cached) onUpdate(JSON.parse(cached));
+    } catch {}
+    return () => {};
+  }
+}
+
+/**
+ * Fetch a single Topic Mastery session by ID
+ */
+export async function getTopicMasterySession(sessionId: string): Promise<TopicMasterySession | null> {
+  if (!sessionId) return null;
+  try {
+    const docRef = doc(db, TOPIC_MASTERY_COLLECTION, sessionId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as TopicMasterySession;
+    }
+  } catch (err) {
+    handleError('Error getting Topic Mastery session from remote:', err);
+  }
+  return null;
+}
+
+/**
+ * Delete a Topic Mastery Session
+ */
+export async function deleteTopicMasterySession(
+  userId: string,
+  sessionId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!sessionId) return { success: false, error: 'Session ID is required' };
+
+  try {
+    const docRef = doc(db, TOPIC_MASTERY_COLLECTION, sessionId);
+    await deleteDoc(docRef);
+
+    // Remove from local cache
+    try {
+      const localKey = `nmdcat_topic_mastery_sessions_${userId}`;
+      const existing = localStorage.getItem(localKey);
+      if (existing) {
+        const list: TopicMasterySession[] = JSON.parse(existing);
+        const filtered = list.filter(s => s.id !== sessionId);
+        localStorage.setItem(localKey, JSON.stringify(filtered));
+      }
+    } catch {}
+
+    return { success: true };
+  } catch (err: any) {
+    handleError('Error deleting Topic Mastery session:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
 
 

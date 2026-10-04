@@ -62,6 +62,7 @@ export const NAV_CATEGORIES: NavCategory[] = [
     icon: Home,
     items: [
       { id: 'home', label: 'Home', icon: LayoutDashboard, badge: 'Today', badgeColor: 'bg-emerald-500/20 text-emerald-400 font-bold' },
+      { id: 'topic_mastery', label: 'Topic Mastery', icon: Target, badge: '⭐ Master', badgeColor: 'bg-amber-500/20 text-amber-300 font-bold' },
       { id: 'simple_ai_quiz', label: 'AI Quiz Generator', icon: Sparkles, badge: '⚡ AI', badgeColor: 'bg-indigo-500/20 text-indigo-300 font-bold' },
       { id: 'practice', label: 'Practice Studio', icon: PenTool, badge: 'MCQs', badgeColor: 'bg-amber-500/20 text-amber-300 font-semibold' },
       { id: 'review', label: 'Mistake Book', icon: RotateCcw, badge: 'SRS', badgeColor: 'bg-rose-500/20 text-rose-300 font-semibold' },

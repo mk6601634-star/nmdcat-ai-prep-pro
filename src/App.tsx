@@ -17,6 +17,7 @@ const SettingsWorkspace = lazy(() => import('./components/SettingsWorkspace').th
 const AdminPlatformSuite = lazy(() => import('./components/AdminPlatformSuite').then(m => ({ default: m.AdminPlatformSuite })));
 const SimpleAiQuizGenerator = lazy(() => import('./components/SimpleAiQuizGenerator').then(m => ({ default: m.SimpleAiQuizGenerator })));
 const PrismWorkspace = lazy(() => import('./components/prism/PrismWorkspace').then(m => ({ default: m.PrismWorkspace })));
+const TopicMasteryWorkspace = lazy(() => import('./components/topicMastery/TopicMasteryWorkspace').then(m => ({ default: m.TopicMasteryWorkspace })));
 const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModal').then(m => ({ default: m.UniversalSearchModal })));
 
 const WorkspaceLoadingSkeleton = () => (
@@ -409,6 +410,7 @@ export default function App() {
       flashcards: { category: 'RESOURCES', title: 'Flashcards' },
       srs: { category: 'REVIEW', title: 'SRS Review' },
       simple_ai_quiz: { category: 'AI WORKSPACE', title: 'AI Quiz Generator' },
+      topic_mastery: { category: 'STUDY CORE', title: 'Topic Mastery' },
       prism: { category: 'RESOURCES', title: 'PRISM Engine' }
     };
 
@@ -569,6 +571,17 @@ export default function App() {
                   setSavedMistakes={handleSetSavedMistakes}
                   firebaseUser={firebaseUser}
                   setExamHistory={handleSetExamHistory}
+                  onSignIn={handleSignInGoogle}
+                />
+              )}
+
+              {activeTab === 'topic_mastery' && (
+                <TopicMasteryWorkspace
+                  firebaseUser={firebaseUser}
+                  topics={topics}
+                  questionBank={questionBank}
+                  savedMistakes={savedMistakes}
+                  setSavedMistakes={handleSetSavedMistakes}
                   onSignIn={handleSignInGoogle}
                 />
               )}
