@@ -15,4 +15,4 @@ credential*.json
 *.key.json
 .migration-checkpoint.json
 scripts/test_*.mjs
-
+scratch/

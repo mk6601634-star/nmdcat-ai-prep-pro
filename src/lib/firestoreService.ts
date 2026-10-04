@@ -2636,27 +2636,32 @@ export const TOPIC_MASTERY_COLLECTION = 'topicMasterySessions';
  * Save or update a Topic Mastery Session in Firestore and localStorage
  */
 export async function saveTopicMasterySession(
-  userId: string,
-  session: TopicMasterySession
+  userIdOrSession: string | TopicMasterySession,
+  maybeSession?: TopicMasterySession
 ): Promise<{ success: boolean; sessionId: string; error?: string }> {
-  if (!userId) return { success: false, sessionId: session.id, error: 'User ID is required' };
+  const session = (typeof userIdOrSession === 'object' ? userIdOrSession : maybeSession) as TopicMasterySession | undefined;
+  if (!session) return { success: false, sessionId: '', error: 'Session object is required' };
+
+  const effectiveUserId = (typeof userIdOrSession === 'string' ? userIdOrSession : session.userId) || 'anonymous_student';
+  const effectiveSessionId = session.sessionId || (session as any).id || `tms_${Date.now()}`;
 
   const sanitized = removeUndefinedFields({
     ...session,
-    userId,
+    sessionId: effectiveSessionId,
+    userId: effectiveUserId,
     updatedAt: new Date().toISOString()
   });
 
   try {
-    const docRef = doc(db, TOPIC_MASTERY_COLLECTION, session.id);
+    const docRef = doc(db, TOPIC_MASTERY_COLLECTION, effectiveSessionId);
     await setDoc(docRef, sanitized, { merge: true });
 
     // LocalStorage Mirroring for instant offline access
     try {
-      const localKey = `nmdcat_topic_mastery_sessions_${userId}`;
+      const localKey = `nmdcat_topic_mastery_sessions_${effectiveUserId}`;
       const existing = localStorage.getItem(localKey);
       const list: TopicMasterySession[] = existing ? JSON.parse(existing) : [];
-      const idx = list.findIndex(s => s.id === session.id);
+      const idx = list.findIndex(s => (s.sessionId || (s as any).id) === effectiveSessionId);
       if (idx >= 0) {
         list[idx] = sanitized as TopicMasterySession;
       } else {
@@ -2665,16 +2670,16 @@ export async function saveTopicMasterySession(
       localStorage.setItem(localKey, JSON.stringify(list));
     } catch {}
 
-    return { success: true, sessionId: session.id };
+    return { success: true, sessionId: effectiveSessionId };
   } catch (err: any) {
     handleError('Error saving Topic Mastery session:', err);
 
     // Still persist to localStorage fallback
     try {
-      const localKey = `nmdcat_topic_mastery_sessions_${userId}`;
+      const localKey = `nmdcat_topic_mastery_sessions_${effectiveUserId}`;
       const existing = localStorage.getItem(localKey);
       const list: TopicMasterySession[] = existing ? JSON.parse(existing) : [];
-      const idx = list.findIndex(s => s.id === session.id);
+      const idx = list.findIndex(s => (s.sessionId || (s as any).id) === effectiveSessionId);
       if (idx >= 0) {
         list[idx] = sanitized as TopicMasterySession;
       } else {
@@ -2683,7 +2688,7 @@ export async function saveTopicMasterySession(
       localStorage.setItem(localKey, JSON.stringify(list));
     } catch {}
 
-    return { success: true, sessionId: session.id };
+    return { success: true, sessionId: effectiveSessionId };
   }
 }
 
@@ -2780,7 +2785,7 @@ export async function deleteTopicMasterySession(
       const existing = localStorage.getItem(localKey);
       if (existing) {
         const list: TopicMasterySession[] = JSON.parse(existing);
-        const filtered = list.filter(s => s.id !== sessionId);
+        const filtered = list.filter(s => (s.sessionId || (s as any).id) !== sessionId);
         localStorage.setItem(localKey, JSON.stringify(filtered));
       }
     } catch {}
