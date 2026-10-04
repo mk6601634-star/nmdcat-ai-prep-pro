@@ -4,6 +4,7 @@ import { TopBar } from './components/TopBar';
 import { RightSidebar } from './components/RightSidebar';
 import { QuickActionFAB } from './components/QuickActionFAB';
 import { BottomMobileNav } from './components/BottomMobileNav';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Code-split heavy workspaces for lightning-fast initial load & snappy navigation
 const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -483,7 +484,8 @@ export default function App() {
 
         <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex gap-8">
           <main className="flex-1 min-w-0 pb-20 lg:pb-12">
-            <Suspense fallback={<WorkspaceLoadingSkeleton />}>
+            <ErrorBoundary fallbackTitle="Workspace temporary error" onReset={() => setActiveTab('home')}>
+              <Suspense fallback={<WorkspaceLoadingSkeleton />}>
               {isDashboard && (
                 <Dashboard
                   topics={topics}
@@ -627,7 +629,8 @@ export default function App() {
                 />
               )}
             </Suspense>
-          </main>
+          </ErrorBoundary>
+        </main>
 
           <RightSidebar
             onNavigateToTab={setActiveTab}

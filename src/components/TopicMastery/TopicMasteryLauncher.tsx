@@ -91,14 +91,15 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
 
   // Filter topics for currently selected subject
   const subjectTopics = useMemo(() => {
-    return topics.filter(t => t.subject.toLowerCase() === selectedSubject.toLowerCase());
+    const raw = Array.isArray(topics) && topics.length > 0 ? topics : PMDC_SYLLABUS_TOPICS;
+    return raw.filter(t => t && t.subject && t.subject.toLowerCase() === selectedSubject.toLowerCase());
   }, [topics, selectedSubject]);
 
   // Extract unique chapters (units) for current subject
   const chapters = useMemo(() => {
     const set = new Set<string>();
     subjectTopics.forEach(t => {
-      if (t.unit) set.add(t.unit);
+      if (t && t.unit) set.add(t.unit);
     });
     return Array.from(set);
   }, [subjectTopics]);
@@ -111,11 +112,13 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
   // Filter topics by selected chapter and optional search query
   const filteredTopics = useMemo(() => {
     return subjectTopics.filter(t => {
+      if (!t) return false;
       const matchChapter = !activeChapter || t.unit === activeChapter;
-      const matchSearch = !searchQuery || 
-        t.topic.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.unit.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (t.keyPoints && t.keyPoints.some(k => k.toLowerCase().includes(searchQuery.toLowerCase())));
+      const q = (searchQuery || '').toLowerCase().trim();
+      const matchSearch = !q || 
+        (t.topic && t.topic.toLowerCase().includes(q)) || 
+        (t.unit && t.unit.toLowerCase().includes(q)) ||
+        (Array.isArray(t.keyPoints) && t.keyPoints.some(k => typeof k === 'string' && k.toLowerCase().includes(q)));
       return matchChapter && matchSearch;
     });
   }, [subjectTopics, activeChapter, searchQuery]);
@@ -123,7 +126,7 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
   // Effective selected topic (derived)
   const selectedTopic = useMemo(() => {
     if (selectedTopicId) {
-      const found = filteredTopics.find(t => t.id === selectedTopicId) || subjectTopics.find(t => t.id === selectedTopicId);
+      const found = filteredTopics.find(t => t && t.id === selectedTopicId) || subjectTopics.find(t => t && t.id === selectedTopicId);
       if (found) return found;
     }
     return filteredTopics[0] || subjectTopics[0] || null;
@@ -146,8 +149,9 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
 
   // Active in-progress sessions for quick resume
   const activeUnfinishedSessions = useMemo(() => {
+    if (!Array.isArray(inProgressSessions)) return [];
     return inProgressSessions
-      .filter(s => s.status === 'in_progress' || s.status === 'not_started')
+      .filter(s => s && (s.status === 'in_progress' || s.status === 'not_started'))
       .slice(0, 3);
   }, [inProgressSessions]);
 
@@ -239,7 +243,7 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
                         {session.topicName}
                       </h4>
                       <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
-                        <span>{session.completedStages.length} stages done</span>
+                        <span>{(session.completedStages || []).length} stages done</span>
                         <span>•</span>
                         <span className="text-amber-400 font-bold">{score}% mastery</span>
                       </div>
@@ -396,7 +400,7 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
                       <h4 className="font-bold text-white text-sm group-hover:text-amber-300">
                         {top.topic}
                       </h4>
-                      {top.keyPoints && top.keyPoints.length > 0 && (
+                      {Array.isArray(top.keyPoints) && top.keyPoints.length > 0 && typeof top.keyPoints[0] === 'string' && (
                         <div className="text-xs text-slate-400 line-clamp-1">
                           <FormattedMathContent content={top.keyPoints[0]} />
                         </div>
