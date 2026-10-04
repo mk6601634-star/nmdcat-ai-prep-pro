@@ -17,7 +17,7 @@ const SettingsWorkspace = lazy(() => import('./components/SettingsWorkspace').th
 const AdminPlatformSuite = lazy(() => import('./components/AdminPlatformSuite').then(m => ({ default: m.AdminPlatformSuite })));
 const SimpleAiQuizGenerator = lazy(() => import('./components/SimpleAiQuizGenerator').then(m => ({ default: m.SimpleAiQuizGenerator })));
 const PrismWorkspace = lazy(() => import('./components/prism/PrismWorkspace').then(m => ({ default: m.PrismWorkspace })));
-const TopicMasteryWorkspace = lazy(() => import('./components/topicMastery/TopicMasteryWorkspace').then(m => ({ default: m.TopicMasteryWorkspace })));
+const TopicMasteryWorkspace = lazy(() => import('./components/TopicMastery/TopicMasteryWorkspace').then(m => ({ default: m.TopicMasteryWorkspace })));
 const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModal').then(m => ({ default: m.UniversalSearchModal })));
 
 const WorkspaceLoadingSkeleton = () => (

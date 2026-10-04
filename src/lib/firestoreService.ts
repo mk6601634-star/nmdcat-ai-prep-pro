@@ -2699,8 +2699,20 @@ export function subscribeToUserTopicMasterySessions(
   userId: string,
   onUpdate: (sessions: TopicMasterySession[]) => void
 ) {
-  if (!userId) {
+  const effectiveUserId = userId || 'anonymous_student';
+  const localKey = `nmdcat_topic_mastery_sessions_${effectiveUserId}`;
+
+  // Always deliver localStorage cache first for immediate zero-latency rendering
+  try {
+    const cached = localStorage.getItem(localKey);
+    if (cached) onUpdate(JSON.parse(cached));
+    else onUpdate([]);
+  } catch {
     onUpdate([]);
+  }
+
+  // If user is unauthenticated / anonymous, rely on local storage
+  if (!userId || userId === 'anonymous' || userId === 'anonymous_student') {
     return () => {};
   }
 
@@ -2723,16 +2735,15 @@ export function subscribeToUserTopicMasterySessions(
 
         // Update localStorage cache
         try {
-          localStorage.setItem(`nmdcat_topic_mastery_sessions_${userId}`, JSON.stringify(sessions));
+          localStorage.setItem(localKey, JSON.stringify(sessions));
         } catch {}
 
         onUpdate(sessions);
       },
       (err) => {
-        handleError('Error subscribing to Topic Mastery sessions:', err);
-        // Fallback to localStorage
+        // Fallback silently to localStorage without throwing
         try {
-          const cached = localStorage.getItem(`nmdcat_topic_mastery_sessions_${userId}`);
+          const cached = localStorage.getItem(localKey);
           if (cached) onUpdate(JSON.parse(cached));
         } catch {}
       }
@@ -2740,9 +2751,8 @@ export function subscribeToUserTopicMasterySessions(
 
     return unsubscribe;
   } catch (err) {
-    handleError('Error initializing Topic Mastery subscription:', err);
     try {
-      const cached = localStorage.getItem(`nmdcat_topic_mastery_sessions_${userId}`);
+      const cached = localStorage.getItem(localKey);
       if (cached) onUpdate(JSON.parse(cached));
     } catch {}
     return () => {};
@@ -2770,14 +2780,18 @@ export async function getTopicMasterySession(sessionId: string): Promise<TopicMa
  * Delete a Topic Mastery Session
  */
 export async function deleteTopicMasterySession(
-  userId: string,
-  sessionId: string
+  userIdOrSessionId: string,
+  maybeSessionId?: string
 ): Promise<{ success: boolean; error?: string }> {
+  const sessionId = maybeSessionId || userIdOrSessionId;
+  const userId = maybeSessionId ? userIdOrSessionId : 'anonymous_student';
   if (!sessionId) return { success: false, error: 'Session ID is required' };
 
   try {
-    const docRef = doc(db, TOPIC_MASTERY_COLLECTION, sessionId);
-    await deleteDoc(docRef);
+    if (userId && userId !== 'anonymous' && userId !== 'anonymous_student') {
+      const docRef = doc(db, TOPIC_MASTERY_COLLECTION, sessionId);
+      await deleteDoc(docRef);
+    }
 
     // Remove from local cache
     try {
@@ -2792,7 +2806,6 @@ export async function deleteTopicMasterySession(
 
     return { success: true };
   } catch (err: any) {
-    handleError('Error deleting Topic Mastery session:', err);
     return { success: false, error: err?.message };
   }
 }

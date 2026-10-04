@@ -46,8 +46,10 @@ export function getRelevantStagesForSubject(subject: SubjectType, topicName?: st
     }
   ];
 
+  const s = (subject || '').toLowerCase();
+
   // Subject-specific additions
-  if (subject === 'Physics') {
+  if (s === 'physics') {
     baseStages.push({
       id: 'formulas',
       label: 'Formulas & Dimensions',
@@ -63,7 +65,7 @@ export function getRelevantStagesForSubject(subject: SubjectType, topicName?: st
       description: 'Common PMDC trick questions, edge cases, and sign conventions',
       iconName: 'AlertTriangle'
     });
-  } else if (subject === 'Chemistry') {
+  } else if (s === 'chemistry') {
     baseStages.push({
       id: 'reactions',
       label: 'Reactions & Mechanisms',
@@ -93,7 +95,7 @@ export function getRelevantStagesForSubject(subject: SubjectType, topicName?: st
       description: 'Authoritative PMDC textbook definitions and terms',
       iconName: 'BookOpen'
     });
-  } else if (subject === 'Biology') {
+  } else if (s === 'biology') {
     baseStages.push({
       id: 'definitions',
       label: 'Biological Terms & Definitions',
@@ -116,7 +118,7 @@ export function getRelevantStagesForSubject(subject: SubjectType, topicName?: st
       description: 'Frequently tested PMDC distractor patterns and exceptions',
       iconName: 'AlertTriangle'
     });
-  } else if (subject === 'English') {
+  } else if (s === 'english') {
     baseStages.push({
       id: 'definitions',
       label: 'Grammar Rules & Vocabulary',
