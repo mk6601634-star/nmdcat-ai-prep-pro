@@ -447,13 +447,13 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
             <div className="flex items-center gap-2 flex-wrap pt-1">
               <span className="text-xs text-slate-400 font-semibold mr-1">Dynamic Stages:</span>
               {relevantStages.map(stage => {
-                const Icon = stage.icon;
+                const Icon = stage.icon || Target;
                 return (
                   <span
                     key={stage.id}
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-slate-800/80 border border-slate-700 text-slate-300 text-[11px]"
                   >
-                    <Icon className="w-3 h-3 text-indigo-400" />
+                    {Icon && <Icon className="w-3 h-3 text-indigo-400" />}
                     {stage.label}
                   </span>
                 );

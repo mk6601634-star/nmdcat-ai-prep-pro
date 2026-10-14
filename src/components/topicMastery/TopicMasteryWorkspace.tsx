@@ -412,7 +412,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
       <div className="bg-slate-900/60 p-2 rounded-2xl border border-slate-800/80 shadow-md">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
           {currentSubjectStages.map((stage, idx) => {
-            const Icon = stage.icon;
+            const Icon = stage.icon || Layers;
             const isActive = currentSession.currentStage === stage.id;
             const isCompleted = currentSession.completedStages.includes(stage.id);
             const isRecommended = recommendedStage === stage.id && !isCompleted;
@@ -431,7 +431,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
                     : 'bg-slate-900/40 text-slate-400 border border-slate-800/80 hover:text-slate-200 hover:bg-slate-800/40'
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950 stroke-[2.5]' : isCompleted ? 'text-emerald-400' : isRecommended ? 'text-indigo-400' : 'text-slate-400'}`} />
+                {Icon && <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950 stroke-[2.5]' : isCompleted ? 'text-emerald-400' : isRecommended ? 'text-indigo-400' : 'text-slate-400'}`} />}
                 <span>{stage.label}</span>
 
                 {isCompleted && (

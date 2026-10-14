@@ -20,6 +20,7 @@ export interface TopicMasteryStageDefinition {
   shortLabel: string;
   description: string;
   iconName: string;
+  icon?: any;
   badge?: string;
 }
 

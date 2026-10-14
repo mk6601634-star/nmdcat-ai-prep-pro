@@ -16,6 +16,35 @@ import {
   TopicMasteryFlashcardResult
 } from '../types/topicMastery';
 import { filterCanonicalMCQs } from '../lib/mcqRetrievalService';
+import { 
+  Bot, 
+  Network, 
+  FileText, 
+  Calculator, 
+  AlertTriangle, 
+  FlaskConical, 
+  Brain, 
+  BookOpen, 
+  Layers, 
+  CheckCircle2, 
+  Zap, 
+  Trophy 
+} from 'lucide-react';
+
+const STAGE_ICON_MAP: Record<string, any> = {
+  Bot,
+  Network,
+  FileText,
+  Calculator,
+  AlertTriangle,
+  FlaskConical,
+  Brain,
+  BookOpen,
+  Layers,
+  CheckCircle2,
+  Zap,
+  Trophy
+};
 
 /**
  * Returns dynamic list of relevant learning stages based on Subject & Topic characteristics
@@ -185,7 +214,10 @@ export function getRelevantStagesForSubject(subject: SubjectType, topicName?: st
     }
   );
 
-  return baseStages;
+  return baseStages.map(stage => ({
+    ...stage,
+    icon: STAGE_ICON_MAP[stage.iconName] || Bot
+  }));
 }
 
 /**
