@@ -160,19 +160,21 @@ export const TutorStage: React.FC<TutorStageProps> = ({
   useEffect(() => {
     if (messages.length === 0 && !initialGeneratedRef.current) {
       initialGeneratedRef.current = true;
-      const initialPrompt = `Hello! Please provide a comprehensive, high-yield introductory overview of "${context.topicName}" (${context.subjectName} - ${context.chapterName}) for my NMDCAT preparation. Focus on core concepts, key mechanisms, and what PMDC examiners expect.`;
-      handleSend(initialPrompt);
+      const introPrompt = `Hello! Please provide a comprehensive, high-yield introductory overview of "${context.topicName}" (${context.subjectName} - ${context.chapterName}) for my NMDCAT preparation. Focus on core concepts, key mechanisms, and what PMDC examiners expect.`;
+      handleSend(introPrompt);
     }
   }, [context.topicName]);
 
   // Handle external or initial prompts sent from other stages (e.g. "Ask Tutor about this formula")
+  const handledPromptRef = useRef<string | null>(null);
   useEffect(() => {
     const prompt = initialPrompt || externalPrompt;
-    if (prompt && prompt.trim()) {
+    if (prompt && prompt.trim() && handledPromptRef.current !== prompt.trim()) {
+      handledPromptRef.current = prompt.trim();
       handleSend(prompt.trim());
       if (onClearExternalPrompt) onClearExternalPrompt();
     }
-  }, [initialPrompt, externalPrompt]);
+  }, [initialPrompt, externalPrompt, onClearExternalPrompt]);
 
   return (
     <div className="space-y-6">

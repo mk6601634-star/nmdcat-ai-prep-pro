@@ -190,7 +190,8 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
 
   // Handler: Delete session
   const handleDeleteSession = async (sessionId: string) => {
-    await deleteTopicMasterySession(sessionId);
+    const userId = firebaseUser?.uid || 'anonymous_student';
+    await deleteTopicMasterySession(userId, sessionId);
     if (currentSession?.sessionId === sessionId) {
       setCurrentSession(null);
       setViewState('launcher');
@@ -457,6 +458,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
             isCompleted={currentSession.completedStages.includes('tutor')}
             onToggleComplete={() => handleStageComplete('tutor')}
             initialPrompt={initialTutorPrompt}
+            onClearExternalPrompt={() => setInitialTutorPrompt(undefined)}
           />
         )}
 
@@ -657,3 +659,6 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
     </div>
   );
 };
+
+export default TopicMasteryWorkspace;
+

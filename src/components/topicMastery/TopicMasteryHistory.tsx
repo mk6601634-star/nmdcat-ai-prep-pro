@@ -39,19 +39,24 @@ export const TopicMasteryHistory: React.FC<TopicMasteryHistoryProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const filtered = sessions.filter(s => {
-    if (subjectFilter !== 'ALL' && s.subject !== subjectFilter) return false;
+  const filtered = (sessions || []).filter(s => {
+    if (!s) return false;
+    const sub = s.subjectName || (s as any).subject || '';
+    const top = s.topicName || (s as any).topic || '';
+    const chap = s.chapterName || (s as any).chapter || '';
+
+    if (subjectFilter !== 'ALL' && sub !== subjectFilter) return false;
     if (statusFilter !== 'ALL') {
       if (statusFilter === 'IN_PROGRESS' && s.status !== 'in_progress') return false;
       if (statusFilter === 'COMPLETED' && s.status !== 'completed') return false;
-      if (statusFilter === 'MASTERED' && s.masteryStatus !== 'Mastered') return false;
+      if (statusFilter === 'MASTERED' && (s as any).masteryStatus !== 'Mastered') return false;
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return (
-        s.topic.toLowerCase().includes(q) ||
-        s.chapter.toLowerCase().includes(q) ||
-        s.subject.toLowerCase().includes(q)
+        top.toLowerCase().includes(q) ||
+        chap.toLowerCase().includes(q) ||
+        sub.toLowerCase().includes(q)
       );
     }
     return true;
