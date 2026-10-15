@@ -88,6 +88,9 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
   const [selectedChapter, setSelectedChapter] = useState<string>('');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [mode, setMode] = useState<'syllabus' | 'custom'>('syllabus');
+  const [customTopicName, setCustomTopicName] = useState<string>('');
+  const [customChapterName, setCustomChapterName] = useState<string>('');
 
   // Filter topics for currently selected subject
   const subjectTopics = useMemo(() => {
@@ -125,12 +128,28 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
 
   // Effective selected topic (derived)
   const selectedTopic = useMemo(() => {
+    if (mode === 'custom') {
+      if (!customTopicName.trim()) return null;
+      return {
+        id: `custom_${customTopicName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+        subject: selectedSubject,
+        unit: customChapterName.trim() || activeChapter || 'General Unit',
+        topic: customTopicName.trim(),
+        weightagePercentage: 5,
+        keyPoints: [
+          `Core conceptual mechanisms of ${customTopicName.trim()} for PMDC syllabus.`,
+          `High-yield applications and formula/reaction relationships.`,
+          `Exam traps and typical distractors tested in NMDCAT.`
+        ]
+      } as SyllabusTopic;
+    }
+
     if (selectedTopicId) {
       const found = filteredTopics.find(t => t && t.id === selectedTopicId) || subjectTopics.find(t => t && t.id === selectedTopicId);
       if (found) return found;
     }
     return filteredTopics[0] || subjectTopics[0] || null;
-  }, [subjectTopics, selectedTopicId, filteredTopics]);
+  }, [mode, customTopicName, customChapterName, activeChapter, selectedSubject, selectedTopicId, filteredTopics, subjectTopics]);
 
   const handleSubjectSelect = (sub: SubjectType) => {
     setSelectedSubject(sub);
@@ -305,126 +324,261 @@ export const TopicMasteryLauncher: React.FC<TopicMasteryLauncherProps> = ({
         </div>
       </div>
 
-      {/* Step 2 & 3: Chapter & Topic Selection */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Chapters Column */}
-        <div className="lg:col-span-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-indigo-500 text-white font-bold text-xs flex items-center justify-center">2</span>
-              <h3 className="text-base font-bold text-white">Select Chapter / Unit</h3>
-            </div>
-            <span className="text-xs text-slate-400 font-mono">{chapters.length} units</span>
-          </div>
+      {/* Mode Switcher: Pre-existing Syllabus vs Custom Topic */}
+      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMode('syllabus')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              mode === 'syllabus'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>PMDC Syllabus Topics ({subjectTopics.length})</span>
+          </button>
 
-          <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
-            {chapters.map((chapter, idx) => {
-              const isSelected = activeChapter === chapter;
-              const count = subjectTopics.filter(t => t.unit === chapter).length;
-              return (
-                <button
-                  key={chapter}
-                  onClick={() => handleChapterSelect(chapter)}
-                  className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer ${
-                    isSelected
-                      ? 'bg-indigo-950/60 border-indigo-500/60 text-white shadow-md'
-                      : 'bg-slate-900/40 border-slate-800/80 hover:bg-slate-800/60 text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md ${isSelected ? 'bg-indigo-500 text-white font-bold' : 'bg-slate-800 text-slate-400'}`}>
-                      U{idx + 1}
-                    </span>
-                    <span className="text-xs font-semibold truncate">
-                      {chapter}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-mono px-2 py-0.5 rounded-full bg-slate-800/50">
-                    {count} topics
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <button
+            onClick={() => setMode('custom')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              mode === 'custom'
+                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20 font-extrabold'
+                : 'bg-slate-900 text-amber-400 hover:text-amber-300 border border-amber-500/30'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Master Any Custom Topic</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-400/20 text-amber-300">New</span>
+          </button>
         </div>
 
-        {/* Topics Column */}
-        <div className="lg:col-span-8 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-indigo-500 text-white font-bold text-xs flex items-center justify-center">3</span>
-              <h3 className="text-base font-bold text-white">Choose Specific Topic</h3>
+        <span className="text-xs text-slate-500 hidden sm:inline">
+          {mode === 'custom' ? 'Full 7-stage workflow applied to any topic' : 'Curated PMDC standard syllabus'}
+        </span>
+      </div>
+
+      {mode === 'custom' ? (
+        /* Custom Topic Creator Card */
+        <div className="p-6 md:p-8 rounded-3xl bg-slate-900/80 border border-amber-500/40 shadow-xl space-y-6">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <Sparkles className="w-6 h-6" />
             </div>
-            {/* Search */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                Start Any Custom Topic in {selectedSubject}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Enter any topic or concept. The Topic Mastery engine will automatically build the entire sequence: Socratic AI Tutor, Concept Mind Map, Smart Revision Notes, Flashcards, Practice MCQs, Weak Area Diagnostic, and Final Mastery Test.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-8 space-y-1.5">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Topic or Concept Name <span className="text-amber-400">*</span>
+              </label>
               <input
                 type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search topics or concepts..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                value={customTopicName}
+                onChange={e => setCustomTopicName(e.target.value)}
+                placeholder="e.g. CRISPR-Cas9, Fluid Mosaic Model, Doppler Effect, Aldol Condensation..."
+                className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+              />
+            </div>
+
+            <div className="md:col-span-4 space-y-1.5">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Chapter / Unit Name (Optional)
+              </label>
+              <input
+                type="text"
+                value={customChapterName}
+                onChange={e => setCustomChapterName(e.target.value)}
+                placeholder={activeChapter || 'e.g. Cell Biology'}
+                className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
               />
             </div>
           </div>
 
-          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
-            {filteredTopics.length === 0 ? (
-              <div className="p-8 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-slate-400">
-                <Search className="w-8 h-8 mx-auto mb-2 text-slate-500 opacity-50" />
-                <p className="text-sm font-semibold">No topics match your filter</p>
-                <p className="text-xs text-slate-500 mt-1">Try searching for different keywords or pick another chapter</p>
-              </div>
-            ) : (
-              filteredTopics.map(top => {
-                const isSelected = selectedTopic?.id === top.id;
-                return (
-                  <div
-                    key={top.id}
-                    onClick={() => setSelectedTopicId(top.id)}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                      isSelected
-                        ? 'bg-slate-800/95 border-amber-500/80 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/40'
-                        : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {top.weightagePercentage || 5}% PMDC Weightage
-                        </span>
-                        <span className="text-[10px] text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md">
-                          {top.unit}
-                        </span>
-                      </div>
-                      <h4 className="font-bold text-white text-sm group-hover:text-amber-300">
-                        {top.topic}
-                      </h4>
-                      {Array.isArray(top.keyPoints) && top.keyPoints.length > 0 && typeof top.keyPoints[0] === 'string' && (
-                        <div className="text-xs text-slate-400 line-clamp-1">
-                          <FormattedMathContent content={top.keyPoints[0]} />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isSelected ? (
-                        <span className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs flex items-center gap-1.5">
-                          <Check className="w-3.5 h-3.5 stroke-[3]" /> Selected
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-semibold text-xs group-hover:text-white">
-                          Select
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
+          {/* Quick Pre-fill Suggestions for Selected Subject */}
+          <div className="space-y-2 pt-2">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              Popular High-Yield Inspirations:
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {(selectedSubject === 'Biology' ? [
+                'Action Potential & Nerve Impulse',
+                'Krebs Cycle & Oxidative Phosphorylation',
+                'Translation & Protein Synthesis',
+                'Immune System & Antibody Structure'
+              ] : selectedSubject === 'Chemistry' ? [
+                'SN1 vs SN2 Reaction Mechanisms',
+                'Le Chatelier Principle & Equilibrium',
+                'Aldehyde & Ketone Oxidation',
+                'Buffer Solutions & Henderson Equation'
+              ] : selectedSubject === 'Physics' ? [
+                'Doppler Effect in Sound Waves',
+                'Electromagnetic Induction & Faraday Law',
+                'Carnot Heat Engine & Thermodynamics',
+                'Photoelectric Effect & Photons'
+              ] : selectedSubject === 'English' ? [
+                'Subject-Verb Agreement Edge Cases',
+                'Dangling Modifiers & Parallelism',
+                'Conditional Clauses (Type 0, 1, 2, 3)',
+                'High-Yield Medical Root Words'
+              ] : [
+                'Syllogisms & Categorical Logic',
+                'Blood Relation Deduction',
+                'Cause and Effect Analysis',
+                'Statement & Assumption Traps'
+              ]).map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCustomTopicName(suggestion)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium transition-all cursor-pointer"
+                >
+                  + {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        /* Step 2 & 3: Chapter & Topic Selection */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Chapters Column */}
+          <div className="lg:col-span-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-indigo-500 text-white font-bold text-xs flex items-center justify-center">2</span>
+                <h3 className="text-base font-bold text-white">Select Chapter / Unit</h3>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">{chapters.length} units</span>
+            </div>
+
+            <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+              {chapters.map((chapter, idx) => {
+                const isSelected = activeChapter === chapter;
+                const count = subjectTopics.filter(t => t.unit === chapter).length;
+                return (
+                  <button
+                    key={chapter}
+                    onClick={() => handleChapterSelect(chapter)}
+                    className={`w-full p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-950/60 border-indigo-500/60 text-white shadow-md'
+                        : 'bg-slate-900/40 border-slate-800/80 hover:bg-slate-800/60 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className={`text-[11px] font-mono px-2 py-0.5 rounded-md ${isSelected ? 'bg-indigo-500 text-white font-bold' : 'bg-slate-800 text-slate-400'}`}>
+                        U{idx + 1}
+                      </span>
+                      <span className="text-xs font-semibold truncate">
+                        {chapter}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono px-2 py-0.5 rounded-full bg-slate-800/50">
+                      {count} topics
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Topics Column */}
+          <div className="lg:col-span-8 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-indigo-500 text-white font-bold text-xs flex items-center justify-center">3</span>
+                <h3 className="text-base font-bold text-white">Choose Specific Topic</h3>
+              </div>
+              {/* Search */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search topics or concepts..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+              {filteredTopics.length === 0 ? (
+                <div className="p-8 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-slate-400">
+                  <Search className="w-8 h-8 mx-auto mb-2 text-slate-500 opacity-50" />
+                  <p className="text-sm font-semibold">No topics match your filter</p>
+                  <p className="text-xs text-slate-500 mt-1">Try searching for different keywords, pick another chapter, or switch to "Master Any Custom Topic" above</p>
+                  <button
+                    onClick={() => {
+                      setMode('custom');
+                      setCustomTopicName(searchQuery);
+                    }}
+                    className="mt-3 px-4 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold hover:bg-amber-500/30 transition-all inline-flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Create "{searchQuery || 'Custom Topic'}" as Topic</span>
+                  </button>
+                </div>
+              ) : (
+                filteredTopics.map(top => {
+                  const isSelected = selectedTopic?.id === top.id;
+                  return (
+                    <div
+                      key={top.id}
+                      onClick={() => setSelectedTopicId(top.id)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isSelected
+                          ? 'bg-slate-800/95 border-amber-500/80 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/40'
+                          : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="space-y-1.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {top.weightagePercentage || 5}% PMDC Weightage
+                          </span>
+                          <span className="text-[10px] text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md">
+                            {top.unit}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-white text-sm group-hover:text-amber-300">
+                          {top.topic}
+                        </h4>
+                        {Array.isArray(top.keyPoints) && top.keyPoints.length > 0 && typeof top.keyPoints[0] === 'string' && (
+                          <div className="text-xs text-slate-400 line-clamp-1">
+                            <FormattedMathContent content={top.keyPoints[0]} />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isSelected ? (
+                          <span className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 stroke-[3]" /> Selected
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-semibold text-xs group-hover:text-white">
+                            Select
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Action Footer Bar / Topic Blueprint */}
       {selectedTopic && (

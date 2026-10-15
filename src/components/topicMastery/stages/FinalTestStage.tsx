@@ -18,6 +18,9 @@ import { TopicMasteryContext, TopicMasteryFinalTestResult } from '../../../types
 import { MCQQuestion } from '../../../types';
 import { filterDatabaseMCQsForTopic } from '../../../utils/topicMasteryUtils';
 import { FormattedMathContent } from '../../FormattedMathContent';
+import { aiFetch } from '../../../lib/aiRequest';
+import { useAiRequestAction } from '../../../lib/useAiRequestAction';
+import { AiActionStatus } from '../../AiActionStatus';
 import confetti from 'canvas-confetti';
 
 interface FinalTestStageProps {
@@ -44,6 +47,7 @@ export const FinalTestStage: React.FC<FinalTestStageProps> = ({
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
   const [testStarted, setTestStarted] = useState<boolean>(!!finalTestResult);
   const timerRef = useRef<any>(null);
+  const testAction = useAiRequestAction();
 
   // Filter 10 questions for final test
   useEffect(() => {
@@ -62,10 +66,58 @@ export const FinalTestStage: React.FC<FinalTestStageProps> = ({
       context.topicName
     );
 
-    // Pick up to 10 questions
-    const pool = matched.slice(0, 10);
-    setTestQuestions(pool);
+    if (matched && matched.length > 0) {
+      const pool = matched.slice(0, 10);
+      setTestQuestions(pool);
+    } else {
+      generateAiTestQuestions();
+    }
   }, [questionBank, context.subjectId, context.chapterName, context.topicName, finalTestResult]);
+
+  const generateAiTestQuestions = async () => {
+    try {
+      const data = await testAction.runRequest(
+        async (signal) =>
+          await aiFetch<{ questions?: any[] }>('/api/generate-quiz-simple', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: context.subjectName,
+              topic: context.topicName,
+              difficultyMode: 'ADVANCED',
+              quantity: 10
+            })
+          }, { signal }),
+        {
+          pending: `Generating 10 comprehensive assessment questions for ${context.topicName}...`,
+          success: 'Final assessment questions prepared.',
+          cancelled: 'Question generation cancelled.',
+          failure: 'Failed to generate assessment questions.'
+        }
+      );
+
+      const qs = data.questions || [];
+      if (qs.length > 0) {
+        const optionLetters = ['A', 'B', 'C', 'D'];
+        const mapped: MCQQuestion[] = qs.map((q: any, idx: number) => ({
+          id: `ai_test_${Date.now()}_${idx}`,
+          subject: context.subjectName as any,
+          chapter: context.chapterName,
+          topic: context.topicName,
+          question: q.question,
+          options: q.options || [],
+          correctIndex: optionLetters.indexOf(q.correctAnswer) >= 0 ? optionLetters.indexOf(q.correctAnswer) : 0,
+          explanation: q.explanation || '',
+          difficulty: 'Hard',
+          type: 'Standard',
+          cognitiveLevel: 'Application'
+        }));
+        setTestQuestions(mapped);
+      }
+    } catch (err) {
+      console.warn('Final test question generation error:', err);
+    }
+  };
 
   // Timer
   useEffect(() => {
@@ -155,20 +207,31 @@ export const FinalTestStage: React.FC<FinalTestStageProps> = ({
           </div>
         </div>
 
+        <AiActionStatus action={testAction} />
+
         {testQuestions.length === 0 && (
-          <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-400">
-            <p className="font-semibold text-slate-300">No database questions available for this specific topic yet.</p>
-            <p className="mt-1">We strictly enforce real questions from the PMDC Question Bank to prevent fake or hallucinated MCQs.</p>
+          <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-400 space-y-3">
+            <p className="font-semibold text-slate-300">No database questions in pool for this exact topic.</p>
+            <p>Our medical AI generator can automatically prepare 10 challenging NMDCAT questions for your mastery test.</p>
+            <button
+              type="button"
+              onClick={generateAiTestQuestions}
+              disabled={testAction.loading}
+              className="py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 mx-auto transition-all shadow-md cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{testAction.loading ? 'Generating 10 MCQs...' : 'Generate 10 Assessment MCQs Now'}</span>
+            </button>
           </div>
         )}
 
         <button
           onClick={handleStartTest}
-          disabled={testQuestions.length === 0}
+          disabled={testQuestions.length === 0 || testAction.loading}
           className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 disabled:opacity-40 text-slate-950 font-black text-sm flex items-center justify-center gap-2 transition-all shadow-xl shadow-amber-500/20 cursor-pointer disabled:cursor-not-allowed"
         >
           <Award className="w-4 h-4" />
-          <span>{testQuestions.length > 0 ? 'Start Final Mastery Test Now' : 'No Database Questions in Pool'}</span>
+          <span>{testQuestions.length > 0 ? 'Start Final Mastery Test Now' : testAction.loading ? 'Preparing Questions...' : 'Generate Questions to Start'}</span>
         </button>
       </div>
     );

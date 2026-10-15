@@ -14,6 +14,9 @@ import { TopicMasteryContext } from '../../../types/topicMastery';
 import { SyllabusTopic } from '../../../types';
 import { PMDC_SYLLABUS_TOPICS } from '../../../data/nmdcatData';
 import { FormattedMathContent } from '../../FormattedMathContent';
+import { aiFetch } from '../../../lib/aiRequest';
+import { useAiRequestAction } from '../../../lib/useAiRequestAction';
+import { AiActionStatus } from '../../AiActionStatus';
 
 interface SmartNotesStageProps {
   context: TopicMasteryContext;
@@ -31,6 +34,8 @@ export const SmartNotesStage: React.FC<SmartNotesStageProps> = ({
   onNavigateStage
 }) => {
   const [activeTab, setActiveTab] = useState<'high_yield' | 'textbook' | 'checklist'>('high_yield');
+  const [customKeyPoints, setCustomKeyPoints] = useState<string[]>([]);
+  const notesAction = useAiRequestAction();
 
   // Find syllabus topic metadata
   const syllabusEntry = PMDC_SYLLABUS_TOPICS.find(t => 
@@ -38,11 +43,51 @@ export const SmartNotesStage: React.FC<SmartNotesStageProps> = ({
     (t.topic.toLowerCase().includes(context.topicName.toLowerCase()) || context.topicName.toLowerCase().includes(t.topic.toLowerCase()))
   );
 
-  const keyPoints = syllabusEntry?.keyPoints || [
-    `Core high-yield principle of ${context.topicName} according to PMDC guidelines.`,
-    `Frequently tested in national entrance exams with high weightage.`,
-    `Connects directly with prerequisite chapter concepts in ${context.chapterName}.`
-  ];
+  React.useEffect(() => {
+    if (!syllabusEntry) {
+      loadCustomNotes();
+    }
+  }, [context.topicName, context.subjectName]);
+
+  const loadCustomNotes = async () => {
+    try {
+      const data = await notesAction.runRequest(
+        async (signal) =>
+          await aiFetch<{ keyPoints?: string[]; points?: string[]; summary?: string }>('/api/multilevel-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: context.subjectName,
+              topic: context.topicName,
+              chapter: context.chapterName
+            })
+          }, { signal }),
+        {
+          pending: `Preparing high-yield study sheet for ${context.topicName}...`,
+          success: 'Smart notes ready.',
+          cancelled: 'Cancelled notes request.',
+          failure: 'Failed to generate study notes.'
+        }
+      );
+
+      if (data && (data.keyPoints || data.points)) {
+        setCustomKeyPoints(data.keyPoints || data.points || []);
+      }
+    } catch (err) {
+      console.warn('Smart notes generation notice:', err);
+    }
+  };
+
+  const keyPoints = (syllabusEntry && syllabusEntry.keyPoints && syllabusEntry.keyPoints.length > 0)
+    ? syllabusEntry.keyPoints
+    : customKeyPoints.length > 0
+    ? customKeyPoints
+    : [
+        `Core high-yield principle of ${context.topicName} according to PMDC guidelines.`,
+        `Frequently tested in national entrance exams with high weightage.`,
+        `Connects directly with prerequisite chapter concepts in ${context.chapterName}.`,
+        `Key clinical and biochemical/physical mechanisms tested in competitive distractors.`
+      ];
 
   return (
     <div className="space-y-6">
@@ -88,6 +133,8 @@ export const SmartNotesStage: React.FC<SmartNotesStageProps> = ({
           </button>
         </div>
       </div>
+
+      <AiActionStatus action={notesAction} />
 
       {/* Main Content Area */}
       {activeTab === 'high_yield' && (

@@ -18,6 +18,9 @@ import { filterDatabaseMCQsForTopic } from '../../../utils/topicMasteryUtils';
 import { FormattedMathContent } from '../../FormattedMathContent';
 import { saveMistakeToFirestore } from '../../../lib/firestoreService';
 import { auth } from '../../../lib/firebase';
+import { aiFetch } from '../../../lib/aiRequest';
+import { useAiRequestAction } from '../../../lib/useAiRequestAction';
+import { AiActionStatus } from '../../AiActionStatus';
 import confetti from 'canvas-confetti';
 
 interface PracticeMCQStageProps {
@@ -45,6 +48,8 @@ export const PracticeMCQStage: React.FC<PracticeMCQStageProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [savedMistakeIds, setSavedMistakeIds] = useState<Set<string>>(new Set());
+  const [isAiGenerated, setIsAiGenerated] = useState(false);
+  const aiAction = useAiRequestAction();
 
   // Strict DB Retrieval
   useEffect(() => {
@@ -54,9 +59,61 @@ export const PracticeMCQStage: React.FC<PracticeMCQStageProps> = ({
       context.chapterName,
       context.topicName
     );
-    setTopicQuestions(matched);
+    if (matched && matched.length > 0) {
+      setTopicQuestions(matched);
+      setIsAiGenerated(false);
+    } else {
+      // Auto-trigger AI generation if no database match
+      generateAiQuestions();
+    }
     setCurrentIndex(0);
   }, [questionBank, context.subjectId, context.chapterName, context.topicName]);
+
+  const generateAiQuestions = async () => {
+    try {
+      const data = await aiAction.runRequest(
+        async (signal) =>
+          await aiFetch<{ questions?: any[] }>('/api/generate-quiz-simple', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subject: context.subjectName,
+              topic: context.topicName,
+              difficultyMode: 'NORMAL',
+              quantity: 5
+            })
+          }, { signal }),
+        {
+          pending: `Generating 5 high-yield NMDCAT practice MCQs for ${context.topicName}...`,
+          success: 'Practice MCQs generated.',
+          cancelled: 'Question generation cancelled.',
+          failure: 'Failed to generate practice MCQs.'
+        }
+      );
+
+      const qs = data.questions || [];
+      if (qs.length > 0) {
+        const optionLetters = ['A', 'B', 'C', 'D'];
+        const mapped: MCQQuestion[] = qs.map((q: any, idx: number) => ({
+          id: `ai_prac_${Date.now()}_${idx}`,
+          subject: context.subjectName as any,
+          chapter: context.chapterName,
+          topic: context.topicName,
+          question: q.question,
+          options: q.options || [],
+          correctIndex: optionLetters.indexOf(q.correctAnswer) >= 0 ? optionLetters.indexOf(q.correctAnswer) : 0,
+          explanation: q.explanation || '',
+          difficulty: 'Medium',
+          type: 'Standard',
+          cognitiveLevel: 'Application'
+        }));
+        setTopicQuestions(mapped);
+        setIsAiGenerated(true);
+      }
+    } catch (err) {
+      console.warn('AI Practice MCQ generation error:', err);
+    }
+  };
 
   const currentQ = topicQuestions[currentIndex];
   const isCurrentAnswered = selectedAnswers[currentIndex] !== undefined;
@@ -125,9 +182,15 @@ export const PracticeMCQStage: React.FC<PracticeMCQStageProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-black text-white tracking-tight">Real Database MCQs</h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Verified PMDC Database
+              <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
+                {isAiGenerated ? 'AI Generated Practice MCQs' : 'Real Database MCQs'}
+              </h2>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                isAiGenerated 
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {isAiGenerated ? 'NMDCAT AI Generated' : 'Verified PMDC Database'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -143,6 +206,8 @@ export const PracticeMCQStage: React.FC<PracticeMCQStageProps> = ({
           </div>
         </div>
       </div>
+
+      <AiActionStatus action={aiAction} />
 
       {topicQuestions.length > 0 && currentQ ? (
         <div className="space-y-5 max-w-3xl mx-auto">
@@ -283,19 +348,29 @@ export const PracticeMCQStage: React.FC<PracticeMCQStageProps> = ({
           </div>
         </div>
       ) : (
-        <div className="p-8 rounded-3xl bg-slate-900/60 border border-slate-800 text-center space-y-3 max-w-lg mx-auto">
+        <div className="p-8 rounded-3xl bg-slate-900/60 border border-slate-800 text-center space-y-4 max-w-lg mx-auto">
           <AlertCircle className="w-8 h-8 text-amber-400 mx-auto" />
           <h3 className="text-sm font-bold text-white">No Database Questions Found for Exact Topic</h3>
           <p className="text-xs text-slate-400">
-            We strictly enforce real questions from the PMDC Question Bank to prevent fake or hallucinated MCQs.
+            You can generate high-yield, PMDC-syllabus aligned practice questions instantly using our medical AI generator, or discuss them with the AI Medical Tutor.
           </p>
-          <button
-            onClick={() => onAskTutor(`Please give me 5 realistic NMDCAT-style practice questions with detailed solutions for ${context.topicName}.`)}
-            className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 mx-auto transition-all"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Practice with AI Tutor Instead</span>
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
+            <button
+              onClick={generateAiQuestions}
+              disabled={aiAction.loading}
+              className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{aiAction.loading ? 'Generating MCQs...' : 'Generate 5 Practice MCQs'}</span>
+            </button>
+            <button
+              onClick={() => onAskTutor(`Please give me 5 realistic NMDCAT-style practice questions with detailed solutions for ${context.topicName}.`)}
+              className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Ask AI Tutor</span>
+            </button>
+          </div>
         </div>
       )}
 
