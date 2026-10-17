@@ -705,6 +705,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
               onAskTutor={handleAskTutor}
               isCompleted={currentSession.completedStages.includes('mindmap')}
               onToggleComplete={() => handleStageComplete('mindmap')}
+              onNavigateStage={handleStageSelect}
             />
           </div>
 
@@ -990,6 +991,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
                 onAskTutor={handleAskTutor}
                 isCompleted={currentSession.completedStages.includes('mindmap')}
                 onToggleComplete={() => handleStageComplete('mindmap')}
+                onNavigateStage={handleStageSelect}
               />
             )}
 
@@ -1016,6 +1018,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
                 onUpdateResults={(results) => updateSession(prev => ({ ...prev, flashcardPerformance: results }))}
                 isCompleted={currentSession.completedStages.includes('flashcards')}
                 onToggleComplete={() => handleStageComplete('flashcards')}
+                onNavigateStage={handleStageSelect}
               />
             )}
 
@@ -1027,6 +1030,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
                 onAskTutor={handleAskTutor}
                 isCompleted={currentSession.completedStages.includes('weak_areas')}
                 onToggleComplete={() => handleStageComplete('weak_areas')}
+                onNavigateStage={handleStageSelect}
               />
             )}
 

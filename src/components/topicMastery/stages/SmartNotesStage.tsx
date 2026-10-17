@@ -270,10 +270,15 @@ export const SmartNotesStage: React.FC<SmartNotesStageProps> = ({
 
         {onNavigateStage && (
           <button
-            onClick={() => onNavigateStage('flashcards')}
-            className="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all"
+            onClick={() => onNavigateStage(
+              context.subjectName === 'Physics' ? 'formulas' :
+              context.subjectName === 'Chemistry' ? 'reactions' :
+              context.subjectName === 'Biology' ? 'definitions' :
+              context.subjectName === 'English' ? 'definitions' : 'traps'
+            )}
+            className="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <span>Next Recommended: Flashcards</span>
+            <span>Next: Subject Fundamentals & Traps</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}

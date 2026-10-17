@@ -390,10 +390,10 @@ export const PracticeMCQStage: React.FC<PracticeMCQStageProps> = ({
 
         {onNavigateStage && (
           <button
-            onClick={() => onNavigateStage('weak_areas')}
-            className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition-all"
+            onClick={() => onNavigateStage('flashcards')}
+            className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <span>Next Recommended: Weak Area Diagnostic</span>
+            <span>Next Recommended: Active Recall Flashcards</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}

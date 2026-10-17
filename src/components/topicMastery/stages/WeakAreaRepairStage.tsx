@@ -129,13 +129,22 @@ export const WeakAreaRepairStage: React.FC<WeakAreaRepairStageProps> = ({
         </button>
 
         {onNavigateStage && (
-          <button
-            onClick={() => onNavigateStage('final_test')}
-            className="px-4 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1.5 transition-all"
-          >
-            <span>Next: Final Topic Mastery Test</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => onNavigateStage('tutor')}
+              className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Ask AI Tutor</span>
+            </button>
+            <button
+              onClick={() => onNavigateStage('final_test')}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+            >
+              <span>Take Final Test</span>
+              <Trophy className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
     </div>

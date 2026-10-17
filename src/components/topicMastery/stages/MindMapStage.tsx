@@ -254,10 +254,10 @@ export const MindMapStage: React.FC<MindMapStageProps> = ({
 
         {onNavigateStage && (
           <button
-            onClick={() => onNavigateStage('notes')}
-            className="px-4 py-2 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/40 text-xs font-bold flex items-center gap-1.5 transition-all"
+            onClick={() => onNavigateStage('mcqs')}
+            className="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <span>Next Recommended: Smart Notes</span>
+            <span>Next: Practice MCQs Drill</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}
