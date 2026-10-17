@@ -50,171 +50,180 @@ const STAGE_ICON_MAP: Record<string, any> = {
  * Returns dynamic list of relevant learning stages based on Subject & Topic characteristics
  */
 export function getRelevantStagesForSubject(subject: SubjectType, topicName?: string): TopicMasteryStageDefinition[] {
-  const baseStages: TopicMasteryStageDefinition[] = [
-    {
-      id: 'tutor',
-      label: 'AI Medical Tutor',
-      shortLabel: 'Tutor',
-      description: 'Interactive Socratic dialogue, core mechanisms, and unlimited Q&A',
-      iconName: 'Bot',
-      badge: 'Core'
-    },
-    {
-      id: 'mindmap',
-      label: 'Concept Mind Map',
-      shortLabel: 'Mind Map',
-      description: 'Visual hierarchical structure and concept connections',
-      iconName: 'Network'
-    },
-    {
-      id: 'notes',
-      label: 'Smart Notes & Summary',
-      shortLabel: 'Notes',
-      description: 'Structured PMDC high-yield revision notes and key facts',
-      iconName: 'FileText'
-    }
-  ];
-
   const s = (subject || '').toLowerCase();
+  const stages: TopicMasteryStageDefinition[] = [];
 
-  // Subject-specific additions
+  // Step 1: Core Concept Orientation & High-Yield Notes (Immediate understanding without clicking/asking)
+  stages.push({
+    id: 'notes',
+    label: 'Smart Notes & Summary',
+    shortLabel: '1. Summary & Notes',
+    description: 'High-yield PMDC syllabus revision points, core facts, and checklist',
+    iconName: 'FileText',
+    badge: 'Step 1'
+  });
+
+  // Step 2: Subject-Specific High-Yield Tools (Formulas / Reactions / Definitions)
   if (s === 'physics') {
-    baseStages.push({
+    stages.push({
       id: 'formulas',
       label: 'Formulas & Dimensions',
-      shortLabel: 'Formulas',
+      shortLabel: '2. Formulas',
       description: 'Equations, variable breakdowns, units, and derivation notes',
       iconName: 'Calculator',
-      badge: 'High Yield'
+      badge: 'Step 2'
     });
-    baseStages.push({
+    stages.push({
       id: 'traps',
-      label: 'Exam Traps & Traps',
-      shortLabel: 'Traps',
+      label: 'Exam Traps & Exceptions',
+      shortLabel: '3. Traps',
       description: 'Common PMDC trick questions, edge cases, and sign conventions',
       iconName: 'AlertTriangle'
     });
   } else if (s === 'chemistry') {
-    baseStages.push({
+    stages.push({
       id: 'reactions',
       label: 'Reactions & Mechanisms',
-      shortLabel: 'Reactions',
+      shortLabel: '2. Reactions',
       description: 'Chemical equations, conditions, catalysts, and exceptions',
       iconName: 'FlaskConical',
-      badge: 'High Yield'
+      badge: 'Step 2'
     });
-    baseStages.push({
+    stages.push({
       id: 'formulas',
       label: 'Physical Formulas & Constants',
-      shortLabel: 'Formulas',
+      shortLabel: '3. Formulas',
       description: 'Gas laws, stoichiometry, thermochemistry & equilibrium formulas',
       iconName: 'Calculator'
     });
-    baseStages.push({
-      id: 'mnemonics',
-      label: 'Chemistry Mnemonics',
-      shortLabel: 'Mnemonics',
-      description: 'Memory hooks for periodic trends, reagents, and series',
-      iconName: 'Brain'
-    });
-    baseStages.push({
+    stages.push({
       id: 'definitions',
       label: 'Core Definitions & Laws',
-      shortLabel: 'Definitions',
+      shortLabel: '4. Definitions',
       description: 'Authoritative PMDC textbook definitions and terms',
       iconName: 'BookOpen'
     });
-  } else if (s === 'biology') {
-    baseStages.push({
-      id: 'definitions',
-      label: 'Biological Terms & Definitions',
-      shortLabel: 'Definitions',
-      description: 'Standard textbook terminology, organelles, enzymes, and pathways',
-      iconName: 'BookOpen',
-      badge: 'Vocabulary'
-    });
-    baseStages.push({
+    stages.push({
       id: 'mnemonics',
-      label: 'Biology Mnemonics',
-      shortLabel: 'Mnemonics',
-      description: 'Memory hooks for cranial nerves, stages, taxonomy, and cycles',
+      label: 'Chemistry Mnemonics',
+      shortLabel: '5. Mnemonics',
+      description: 'Memory hooks for periodic trends, reagents, and series',
       iconName: 'Brain'
     });
-    baseStages.push({
+  } else if (s === 'biology') {
+    stages.push({
+      id: 'definitions',
+      label: 'Key Terms & Definitions',
+      shortLabel: '2. Key Terms',
+      description: 'Standard textbook terminology, organelles, enzymes, and pathways',
+      iconName: 'BookOpen',
+      badge: 'Step 2'
+    });
+    stages.push({
       id: 'traps',
-      label: 'High-Yield Traps & Exceptions',
-      shortLabel: 'Traps',
+      label: 'Exam Traps & Distractors',
+      shortLabel: '3. Traps',
       description: 'Frequently tested PMDC distractor patterns and exceptions',
       iconName: 'AlertTriangle'
     });
-  } else if (s === 'english') {
-    baseStages.push({
-      id: 'definitions',
-      label: 'Grammar Rules & Vocabulary',
-      shortLabel: 'Rules',
-      description: 'Subject-verb agreement, modifiers, tenses, and context definitions',
-      iconName: 'BookOpen'
-    });
-    baseStages.push({
+    stages.push({
       id: 'mnemonics',
-      label: 'Grammar Mnemonics',
-      shortLabel: 'Mnemonics',
-      description: 'Tricks for irregular verbs, prepositions, and sentence structures',
+      label: 'Biology Mnemonics',
+      shortLabel: '4. Mnemonics',
+      description: 'Memory hooks for cranial nerves, stages, taxonomy, and cycles',
       iconName: 'Brain'
     });
-    baseStages.push({
+  } else if (s === 'english') {
+    stages.push({
+      id: 'definitions',
+      label: 'Grammar Rules & Vocabulary',
+      shortLabel: '2. Rules & Terms',
+      description: 'Subject-verb agreement, modifiers, tenses, and context definitions',
+      iconName: 'BookOpen',
+      badge: 'Step 2'
+    });
+    stages.push({
       id: 'traps',
       label: 'Sentence Traps & Distractors',
-      shortLabel: 'Traps',
+      shortLabel: '3. Traps',
       description: 'Misleading options, dangling modifiers, and idioms in NMDCAT',
       iconName: 'AlertTriangle'
     });
+    stages.push({
+      id: 'mnemonics',
+      label: 'Grammar Mnemonics',
+      shortLabel: '4. Mnemonics',
+      description: 'Tricks for irregular verbs, prepositions, and sentence structures',
+      iconName: 'Brain'
+    });
   } else {
     // Logical Reasoning
-    baseStages.push({
+    stages.push({
       id: 'traps',
       label: 'Logic Patterns & Traps',
-      shortLabel: 'Patterns',
+      shortLabel: '2. Patterns',
       description: 'Syllogisms, critical deduction, and sequence traps',
-      iconName: 'AlertTriangle'
+      iconName: 'AlertTriangle',
+      badge: 'Step 2'
     });
   }
 
-  // Universal Practice & Assessment stages
-  baseStages.push(
-    {
-      id: 'flashcards',
-      label: 'Active Recall Flashcards',
-      shortLabel: 'Flashcards',
-      description: 'Spaced repetition flashcards for rapid topic reinforcement',
-      iconName: 'Layers'
-    },
-    {
-      id: 'mcqs',
-      label: 'Database MCQs Practice',
-      shortLabel: 'MCQ Practice',
-      description: 'Real PMDC past paper & syllabus questions with explanations',
-      iconName: 'CheckCircle2',
-      badge: 'Real DB'
-    },
-    {
-      id: 'weak_areas',
-      label: 'Weak Area Diagnostic & Repair',
-      shortLabel: 'Weak Areas',
-      description: 'Targeted remediation for misconceptions identified in testing',
-      iconName: 'Zap'
-    },
-    {
-      id: 'final_test',
-      label: 'Final Topic Mastery Test',
-      shortLabel: 'Final Test',
-      description: '10-Question timed mastery assessment with verified score certificate',
-      iconName: 'Trophy',
-      badge: 'Verified'
-    }
-  );
+  // Step 3: Visual Concept Architecture
+  stages.push({
+    id: 'mindmap',
+    label: 'Concept Mind Map',
+    shortLabel: 'Mind Map',
+    description: 'Visual hierarchical structure and concept connections',
+    iconName: 'Network'
+  });
 
-  return baseStages.map(stage => ({
+  // Step 4: Practice & Verification (MCQs & Active Recall)
+  stages.push({
+    id: 'mcqs',
+    label: 'Practice MCQs',
+    shortLabel: 'Practice MCQs',
+    description: 'Real PMDC past paper & syllabus questions with explanations',
+    iconName: 'CheckCircle2',
+    badge: 'Practice'
+  });
+
+  stages.push({
+    id: 'flashcards',
+    label: 'Active Recall Flashcards',
+    shortLabel: 'Flashcards',
+    description: 'Spaced repetition flashcards for rapid topic reinforcement',
+    iconName: 'Layers'
+  });
+
+  stages.push({
+    id: 'weak_areas',
+    label: 'Weak Area Diagnostic & Repair',
+    shortLabel: 'Weak Areas',
+    description: 'Targeted remediation for misconceptions identified in testing',
+    iconName: 'Zap'
+  });
+
+  // Step 5: Interactive AI Medical Tutor (Instant Socratic Q&A and doubt resolution)
+  stages.push({
+    id: 'tutor',
+    label: 'AI Medical Tutor',
+    shortLabel: 'AI Tutor',
+    description: 'Interactive Socratic dialogue, core mechanisms, and unlimited Q&A',
+    iconName: 'Bot',
+    badge: 'Tutor'
+  });
+
+  // Step 6: Final Timed Mastery Test
+  stages.push({
+    id: 'final_test',
+    label: 'Final Mastery Test',
+    shortLabel: 'Final Test',
+    description: '10-Question timed mastery assessment with verified score certificate',
+    iconName: 'Trophy',
+    badge: 'Exam'
+  });
+
+  return stages.map(stage => ({
     ...stage,
     icon: STAGE_ICON_MAP[stage.iconName] || Bot
   }));

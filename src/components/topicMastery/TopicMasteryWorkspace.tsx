@@ -3,6 +3,7 @@ import {
   Target, 
   Sparkles, 
   ArrowLeft, 
+  ArrowRight,
   CheckCircle2, 
   Clock, 
   History, 
@@ -18,7 +19,13 @@ import {
   Maximize2,
   X,
   Send,
-  MessageSquare
+  MessageSquare,
+  FileText,
+  Calculator,
+  Network,
+  FlaskConical,
+  Zap,
+  Trophy
 } from 'lucide-react';
 import { 
   TopicMasterySession, 
@@ -84,6 +91,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
   const [userSessions, setUserSessions] = useState<TopicMasterySession[]>([]);
   const [currentSession, setCurrentSession] = useState<TopicMasterySession | null>(null);
   const [isReviewMode, setIsReviewMode] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'fast_track' | 'focus'>('fast_track');
 
   // Floating AI Assistant Drawer
   const [isAssistantOpen, setIsAssistantOpen] = useState<boolean>(false);
@@ -129,6 +137,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
   // Handler: Start a brand new mastery session
   const handleStartNewSession = (context: TopicMasteryContext) => {
     const userId = firebaseUser?.uid || 'anonymous_student';
+    const firstStage = getRelevantStagesForSubject(context.subjectName)[0]?.id || 'notes';
     const newSession: TopicMasterySession = {
       sessionId: context.sessionId || `tms_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       userId,
@@ -141,7 +150,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: 'in_progress',
-      currentStage: 'tutor',
+      currentStage: firstStage,
       completedStages: [],
       progress: 0,
       tutorConversation: [],
@@ -155,6 +164,7 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
 
     setCurrentSession(newSession);
     setIsReviewMode(false);
+    setViewMode('fast_track');
     setViewState('workspace');
     saveTopicMasterySession(newSession).catch(err => console.warn(err));
   };
@@ -262,6 +272,56 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
     if (!currentSession) return 0;
     return calculateTopicMasteryScore(currentSession);
   }, [currentSession]);
+
+  const currentStageIndex = useMemo(() => {
+    if (!currentSession) return 0;
+    const idx = currentSubjectStages.findIndex(s => s.id === currentSession.currentStage);
+    return idx >= 0 ? idx : 0;
+  }, [currentSubjectStages, currentSession?.currentStage]);
+
+  const currentStageDef = currentSubjectStages[currentStageIndex];
+  const prevStage = currentStageIndex > 0 ? currentSubjectStages[currentStageIndex - 1] : null;
+  const nextStage = currentStageIndex >= 0 && currentStageIndex < currentSubjectStages.length - 1 
+    ? currentSubjectStages[currentStageIndex + 1] 
+    : null;
+
+  // Handler: Advance to next stage smoothly
+  const handleAdvanceToNextStage = () => {
+    if (!currentSession) return;
+    handleStageComplete(currentSession.currentStage);
+
+    if (nextStage) {
+      handleStageSelect(nextStage.id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleGoToPreviousStage = () => {
+    if (!currentSession || !prevStage) return;
+    handleStageSelect(prevStage.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleMarkAllPreReadingsComplete = () => {
+    if (!currentSession) return;
+    const preReadingStageIds: TopicMasteryStageId[] = ['notes', 'formulas', 'reactions', 'definitions', 'traps', 'mnemonics', 'mindmap'];
+    updateSession(prev => {
+      const combined = Array.from(new Set([...prev.completedStages, ...preReadingStageIds]));
+      const progress = Math.round((combined.length / currentSubjectStages.length) * 100);
+      const score = calculateTopicMasteryScore({ ...prev, completedStages: combined, progress });
+      return {
+        ...prev,
+        completedStages: combined,
+        currentStage: 'mcqs',
+        progress,
+        masteryScore: score,
+        updatedAt: new Date().toISOString()
+      };
+    });
+    setViewMode('focus');
+    handleStageSelect('mcqs');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Render Launcher View
   if (viewState === 'launcher') {
@@ -408,180 +468,663 @@ export const TopicMasteryWorkspace: React.FC<TopicMasteryWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* Non-Linear Learning Stage Tabs */}
-      <div className="bg-slate-900/60 p-2 rounded-2xl border border-slate-800/80 shadow-md">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-          {currentSubjectStages.map((stage, idx) => {
-            const Icon = stage.icon || Layers;
-            const isActive = currentSession.currentStage === stage.id;
-            const isCompleted = currentSession.completedStages.includes(stage.id);
-            const isRecommended = recommendedStage === stage.id && !isCompleted;
+      {/* Study Mode Selector & Rapid Jump Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-md">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode('fast_track')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              viewMode === 'fast_track'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>Fast-Track Flow (All-in-One)</span>
+          </button>
 
-            return (
-              <button
-                key={stage.id}
-                onClick={() => handleStageSelect(stage.id)}
-                className={`px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all cursor-pointer relative ${
-                  isActive
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
-                    : isCompleted
-                    ? 'bg-slate-800/90 text-emerald-300 border border-emerald-500/30 hover:bg-slate-800'
-                    : isRecommended
-                    ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-500/50 hover:bg-indigo-900/60'
-                    : 'bg-slate-900/40 text-slate-400 border border-slate-800/80 hover:text-slate-200 hover:bg-slate-800/40'
-                }`}
-              >
-                {Icon && <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950 stroke-[2.5]' : isCompleted ? 'text-emerald-400' : isRecommended ? 'text-indigo-400' : 'text-slate-400'}`} />}
-                <span>{stage.label}</span>
+          <button
+            onClick={() => setViewMode('focus')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              viewMode === 'focus'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
+                : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+            }`}
+          >
+            <Target className="w-3.5 h-3.5" />
+            <span>Step-by-Step Focus</span>
+          </button>
+        </div>
 
-                {isCompleted && (
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950' : 'text-emerald-400'}`} />
-                )}
-
-                {isRecommended && !isActive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                )}
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleMarkAllPreReadingsComplete}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            title="Mark theory as reviewed and jump straight into MCQs"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Skip to Practice MCQs ⚡</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Active Stage Component Container */}
-      <div className="min-h-[500px]">
-        {currentSession.currentStage === 'tutor' && (
-          <TutorStage
-            context={topicContext}
-            messages={currentSession.tutorConversation}
-            onUpdateMessages={(msgs) => updateSession(prev => ({ ...prev, tutorConversation: msgs }))}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('tutor')}
-            onToggleComplete={() => handleStageComplete('tutor')}
-            initialPrompt={initialTutorPrompt}
-            onClearExternalPrompt={() => setInitialTutorPrompt(undefined)}
-          />
-        )}
+      {viewMode === 'fast_track' ? (
+        /* FAST-TRACK CONTINUOUS FLOW (Zero-click comprehensive study stream) */
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {/* Quick Nav Anchors Bar */}
+          <div className="sticky top-2 z-30 bg-slate-900/95 backdrop-blur-md p-2.5 rounded-2xl border border-slate-800 shadow-xl flex items-center justify-between gap-2 overflow-x-auto custom-scrollbar">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider px-2">Jump To:</span>
+              <button
+                onClick={() => document.getElementById('ft-notes')?.scrollIntoView({ behavior: 'smooth' })}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                <span>1. Summary</span>
+              </button>
+              <button
+                onClick={() => document.getElementById('ft-fundamentals')?.scrollIntoView({ behavior: 'smooth' })}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Calculator className="w-3.5 h-3.5 text-amber-400" />
+                <span>2. Key Equations & Traps</span>
+              </button>
+              <button
+                onClick={() => document.getElementById('ft-mindmap')?.scrollIntoView({ behavior: 'smooth' })}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Network className="w-3.5 h-3.5 text-cyan-400" />
+                <span>3. Mind Map</span>
+              </button>
+              <button
+                onClick={() => document.getElementById('ft-practice')?.scrollIntoView({ behavior: 'smooth' })}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>4. Drills & Exam</span>
+              </button>
+            </div>
+          </div>
 
-        {currentSession.currentStage === 'mindmap' && (
-          <MindMapStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('mindmap')}
-            onToggleComplete={() => handleStageComplete('mindmap')}
-          />
-        )}
+          {/* Section 1: Smart Notes & High-Yield Summary */}
+          <div id="ft-notes" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 font-bold text-xs flex items-center justify-center">1</span>
+                <h3 className="text-base font-bold text-white">Smart Notes & High-Yield Summary</h3>
+              </div>
+              <button
+                onClick={() => handleStageComplete('notes')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                  currentSession.completedStages.includes('notes')
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {currentSession.completedStages.includes('notes') ? 'Completed' : 'Mark Done'}
+              </button>
+            </div>
+            <SmartNotesStage
+              context={topicContext}
+              onAskTutor={handleAskTutor}
+              isCompleted={currentSession.completedStages.includes('notes')}
+              onToggleComplete={() => handleStageComplete('notes')}
+              onNavigateStage={handleStageSelect}
+            />
+          </div>
 
-        {currentSession.currentStage === 'notes' && (
-          <SmartNotesStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('notes')}
-            onToggleComplete={() => handleStageComplete('notes')}
-          />
-        )}
+          {/* Section 2: Subject-Specific Fundamentals */}
+          <div id="ft-fundamentals" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-xs flex items-center justify-center">2</span>
+                <h3 className="text-base font-bold text-white">
+                  {currentSession.subjectName === 'Physics' ? 'Formulas, Units & Exam Traps' :
+                   currentSession.subjectName === 'Chemistry' ? 'Reactions, Formulas & Traps' :
+                   currentSession.subjectName === 'Biology' ? 'Key Terms, Traps & Mnemonics' :
+                   'Rules, Traps & Distractors'}
+                </h3>
+              </div>
+            </div>
 
-        {currentSession.currentStage === 'formulas' && (
-          <FormulasStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('formulas')}
-            onToggleComplete={() => handleStageComplete('formulas')}
-          />
-        )}
+            {currentSession.subjectName === 'Physics' && (
+              <div className="space-y-6">
+                <FormulasStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('formulas')}
+                  onToggleComplete={() => handleStageComplete('formulas')}
+                  onNavigateStage={handleStageSelect}
+                />
+                <TrapsAndApplicationsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('traps')}
+                  onToggleComplete={() => handleStageComplete('traps')}
+                  onNavigateStage={handleStageSelect}
+                />
+              </div>
+            )}
 
-        {currentSession.currentStage === 'reactions' && (
-          <ReactionsStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('reactions')}
-            onToggleComplete={() => handleStageComplete('reactions')}
-          />
-        )}
+            {currentSession.subjectName === 'Chemistry' && (
+              <div className="space-y-6">
+                <ReactionsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('reactions')}
+                  onToggleComplete={() => handleStageComplete('reactions')}
+                  onNavigateStage={handleStageSelect}
+                />
+                <FormulasStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('formulas')}
+                  onToggleComplete={() => handleStageComplete('formulas')}
+                  onNavigateStage={handleStageSelect}
+                />
+                <TrapsAndApplicationsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('traps')}
+                  onToggleComplete={() => handleStageComplete('traps')}
+                  onNavigateStage={handleStageSelect}
+                />
+              </div>
+            )}
 
-        {currentSession.currentStage === 'definitions' && (
-          <DefinitionsStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('definitions')}
-            onToggleComplete={() => handleStageComplete('definitions')}
-          />
-        )}
+            {currentSession.subjectName === 'Biology' && (
+              <div className="space-y-6">
+                <DefinitionsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('definitions')}
+                  onToggleComplete={() => handleStageComplete('definitions')}
+                  onNavigateStage={handleStageSelect}
+                />
+                <TrapsAndApplicationsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('traps')}
+                  onToggleComplete={() => handleStageComplete('traps')}
+                  onNavigateStage={handleStageSelect}
+                />
+                <MnemonicsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('mnemonics')}
+                  onToggleComplete={() => handleStageComplete('mnemonics')}
+                  onNavigateStage={handleStageSelect}
+                />
+              </div>
+            )}
 
-        {currentSession.currentStage === 'mnemonics' && (
-          <MnemonicsStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('mnemonics')}
-            onToggleComplete={() => handleStageComplete('mnemonics')}
-          />
-        )}
+            {(currentSession.subjectName === 'English' || currentSession.subjectName === 'Logical Reasoning') && (
+              <div className="space-y-6">
+                {currentSession.subjectName === 'English' && (
+                  <DefinitionsStage
+                    context={topicContext}
+                    onAskTutor={handleAskTutor}
+                    isCompleted={currentSession.completedStages.includes('definitions')}
+                    onToggleComplete={() => handleStageComplete('definitions')}
+                    onNavigateStage={handleStageSelect}
+                  />
+                )}
+                <TrapsAndApplicationsStage
+                  context={topicContext}
+                  onAskTutor={handleAskTutor}
+                  isCompleted={currentSession.completedStages.includes('traps')}
+                  onToggleComplete={() => handleStageComplete('traps')}
+                  onNavigateStage={handleStageSelect}
+                />
+              </div>
+            )}
+          </div>
 
-        {currentSession.currentStage === 'traps' && (
-          <TrapsAndApplicationsStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('traps')}
-            onToggleComplete={() => handleStageComplete('traps')}
-          />
-        )}
+          {/* Section 3: Visual Concept Mind Map */}
+          <div id="ft-mindmap" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-xs flex items-center justify-center">3</span>
+                <h3 className="text-base font-bold text-white">Visual Concept Mind Map</h3>
+              </div>
+              <button
+                onClick={() => handleStageComplete('mindmap')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                  currentSession.completedStages.includes('mindmap')
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {currentSession.completedStages.includes('mindmap') ? 'Completed' : 'Mark Done'}
+              </button>
+            </div>
+            <MindMapStage
+              context={topicContext}
+              onAskTutor={handleAskTutor}
+              isCompleted={currentSession.completedStages.includes('mindmap')}
+              onToggleComplete={() => handleStageComplete('mindmap')}
+            />
+          </div>
 
-        {currentSession.currentStage === 'flashcards' && (
-          <FlashcardsStage
-            context={topicContext}
-            onAskTutor={handleAskTutor}
-            flashcardResults={currentSession.flashcardPerformance || []}
-            onUpdateResults={(results) => updateSession(prev => ({ ...prev, flashcardPerformance: results }))}
-            isCompleted={currentSession.completedStages.includes('flashcards')}
-            onToggleComplete={() => handleStageComplete('flashcards')}
-          />
-        )}
+          {/* Section 4: Interactive Drills & Testing Dashboard */}
+          <div id="ft-practice" className="space-y-4 pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-xs flex items-center justify-center">4</span>
+                <h3 className="text-base font-bold text-white">Practice Drills & Final Certification</h3>
+              </div>
+            </div>
 
-        {currentSession.currentStage === 'mcqs' && (
-          <PracticeMCQStage
-            context={topicContext}
-            questionBank={questionBank}
-            savedMistakes={savedMistakes}
-            setSavedMistakes={setSavedMistakes}
-            mcqResults={currentSession.mcqPerformance || []}
-            onUpdateResults={(results) => updateSession(prev => ({ ...prev, mcqPerformance: results }))}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('mcqs')}
-            onToggleComplete={() => handleStageComplete('mcqs')}
-          />
-        )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Card 1: Practice MCQs */}
+              <div className="p-5 rounded-3xl bg-slate-900/90 border border-emerald-500/30 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Practice MCQs Drill</h4>
+                      <p className="text-xs text-slate-400">PMDC Past Papers + AI Generation</p>
+                    </div>
+                  </div>
+                  {currentSession.completedStages.includes('mcqs') && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Done
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Solve topic MCQs with instant explanations, distractor analysis, and automatic mistake vault integration.
+                </p>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-slate-400 font-semibold">
+                    {(currentSession.mcqPerformance || []).length} questions attempted
+                  </span>
+                  <button
+                    onClick={() => {
+                      setViewMode('focus');
+                      handleStageSelect('mcqs');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/20"
+                  >
+                    <span>Start Practice MCQs</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
 
-        {currentSession.currentStage === 'weak_areas' && (
-          <WeakAreaRepairStage
-            context={topicContext}
-            mcqResults={currentSession.mcqPerformance || []}
-            flashcardResults={currentSession.flashcardPerformance || []}
-            onAskTutor={handleAskTutor}
-            isCompleted={currentSession.completedStages.includes('weak_areas')}
-            onToggleComplete={() => handleStageComplete('weak_areas')}
-          />
-        )}
+              {/* Card 2: Flashcards */}
+              <div className="p-5 rounded-3xl bg-slate-900/90 border border-indigo-500/30 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                      <Layers className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Active Recall Flashcards</h4>
+                      <p className="text-xs text-slate-400">Spaced Repetition Flashcards</p>
+                    </div>
+                  </div>
+                  {currentSession.completedStages.includes('flashcards') && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Done
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Reinforce terms, definitions, and values with 3D active recall flip cards.
+                </p>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-slate-400 font-semibold">
+                    {(currentSession.flashcardPerformance || []).length} cards reviewed
+                  </span>
+                  <button
+                    onClick={() => {
+                      setViewMode('focus');
+                      handleStageSelect('flashcards');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-indigo-600/20"
+                  >
+                    <span>Start Flashcards</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
 
-        {currentSession.currentStage === 'final_test' && (
-          <FinalTestStage
-            context={topicContext}
-            questionBank={questionBank}
-            finalTestResult={currentSession.finalTestResult}
-            onCompleteTest={(result) => {
-              updateSession(prev => ({
-                ...prev,
-                finalTestResult: result,
-                status: 'completed',
-                completedStages: prev.completedStages.includes('final_test')
-                  ? prev.completedStages
-                  : [...prev.completedStages, 'final_test']
-              }));
-              handleStageComplete('final_test');
-            }}
-            onAskTutor={handleAskTutor}
-            onPracticeAgain={() => handlePracticeAgain(currentSession)}
-          />
-        )}
-      </div>
+              {/* Card 3: AI Medical Tutor */}
+              <div className="p-5 rounded-3xl bg-slate-900/90 border border-amber-500/30 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                      <Bot className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">AI Medical Tutor</h4>
+                      <p className="text-xs text-slate-400">Interactive Socratic Dialogue & Q&A</p>
+                    </div>
+                  </div>
+                  {currentSession.completedStages.includes('tutor') && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Done
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Clarify any doubt, request analogies, or drill high-yield clinical correlations with the dedicated tutor.
+                </p>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-slate-400 font-semibold">
+                    {(currentSession.tutorConversation || []).length} messages exchanged
+                  </span>
+                  <button
+                    onClick={() => {
+                      setViewMode('focus');
+                      handleStageSelect('tutor');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/20"
+                  >
+                    <span>Chat with Tutor</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 4: Final Timed Mastery Test */}
+              <div className="p-5 rounded-3xl bg-slate-900/90 border border-rose-500/30 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                      <Trophy className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Final Timed Mastery Test</h4>
+                      <p className="text-xs text-slate-400">10 Questions • 80% Required for Badge</p>
+                    </div>
+                  </div>
+                  {currentSession.completedStages.includes('final_test') && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Done
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Demonstrate complete mastery under timed exam conditions. Score ≥ 80% to earn your verified badge.
+                </p>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-amber-400 font-bold">
+                    {currentSession.finalTestResult ? `${currentSession.finalTestResult.percentage}% Score` : 'Not attempted yet'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setViewMode('focus');
+                      handleStageSelect('final_test');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/20"
+                  >
+                    <span>Take Final Test</span>
+                    <Trophy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* STEP-BY-STEP FOCUS VIEW WITH PERSISTENT PROGRESSION BAR */
+        <div className="space-y-5 animate-in fade-in duration-300">
+          {/* Non-Linear Learning Stage Tabs */}
+          <div className="bg-slate-900/60 p-2 rounded-2xl border border-slate-800/80 shadow-md">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+              {currentSubjectStages.map((stage, idx) => {
+                const Icon = stage.icon || Layers;
+                const isActive = currentSession.currentStage === stage.id;
+                const isCompleted = currentSession.completedStages.includes(stage.id);
+                const isRecommended = recommendedStage === stage.id && !isCompleted;
+
+                return (
+                  <button
+                    key={stage.id}
+                    onClick={() => handleStageSelect(stage.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all cursor-pointer relative ${
+                      isActive
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                        : isCompleted
+                        ? 'bg-slate-800/90 text-emerald-300 border border-emerald-500/30 hover:bg-slate-800'
+                        : isRecommended
+                        ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-500/50 hover:bg-indigo-900/60'
+                        : 'bg-slate-900/40 text-slate-400 border border-slate-800/80 hover:text-slate-200 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                      isActive ? 'bg-slate-950 text-amber-400' : isCompleted ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <span>{stage.shortLabel || stage.label}</span>
+
+                    {isCompleted && (
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${isActive ? 'text-slate-950' : 'text-emerald-400'}`} />
+                    )}
+
+                    {isRecommended && !isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Main Active Stage Component Container */}
+          <div className="min-h-[500px]">
+            {currentSession.currentStage === 'notes' && (
+              <SmartNotesStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('notes')}
+                onToggleComplete={() => handleStageComplete('notes')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'formulas' && (
+              <FormulasStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('formulas')}
+                onToggleComplete={() => handleStageComplete('formulas')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'reactions' && (
+              <ReactionsStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('reactions')}
+                onToggleComplete={() => handleStageComplete('reactions')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'definitions' && (
+              <DefinitionsStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('definitions')}
+                onToggleComplete={() => handleStageComplete('definitions')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'mnemonics' && (
+              <MnemonicsStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('mnemonics')}
+                onToggleComplete={() => handleStageComplete('mnemonics')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'traps' && (
+              <TrapsAndApplicationsStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('traps')}
+                onToggleComplete={() => handleStageComplete('traps')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'mindmap' && (
+              <MindMapStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('mindmap')}
+                onToggleComplete={() => handleStageComplete('mindmap')}
+              />
+            )}
+
+            {currentSession.currentStage === 'mcqs' && (
+              <PracticeMCQStage
+                context={topicContext}
+                questionBank={questionBank}
+                savedMistakes={savedMistakes}
+                setSavedMistakes={setSavedMistakes}
+                mcqResults={currentSession.mcqPerformance || []}
+                onUpdateResults={(results) => updateSession(prev => ({ ...prev, mcqPerformance: results }))}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('mcqs')}
+                onToggleComplete={() => handleStageComplete('mcqs')}
+                onNavigateStage={handleStageSelect}
+              />
+            )}
+
+            {currentSession.currentStage === 'flashcards' && (
+              <FlashcardsStage
+                context={topicContext}
+                onAskTutor={handleAskTutor}
+                flashcardResults={currentSession.flashcardPerformance || []}
+                onUpdateResults={(results) => updateSession(prev => ({ ...prev, flashcardPerformance: results }))}
+                isCompleted={currentSession.completedStages.includes('flashcards')}
+                onToggleComplete={() => handleStageComplete('flashcards')}
+              />
+            )}
+
+            {currentSession.currentStage === 'weak_areas' && (
+              <WeakAreaRepairStage
+                context={topicContext}
+                mcqResults={currentSession.mcqPerformance || []}
+                flashcardResults={currentSession.flashcardPerformance || []}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('weak_areas')}
+                onToggleComplete={() => handleStageComplete('weak_areas')}
+              />
+            )}
+
+            {currentSession.currentStage === 'tutor' && (
+              <TutorStage
+                context={topicContext}
+                messages={currentSession.tutorConversation}
+                onUpdateMessages={(msgs) => updateSession(prev => ({ ...prev, tutorConversation: msgs }))}
+                onAskTutor={handleAskTutor}
+                isCompleted={currentSession.completedStages.includes('tutor')}
+                onToggleComplete={() => handleStageComplete('tutor')}
+                initialPrompt={initialTutorPrompt}
+                onClearExternalPrompt={() => setInitialTutorPrompt(undefined)}
+              />
+            )}
+
+            {currentSession.currentStage === 'final_test' && (
+              <FinalTestStage
+                context={topicContext}
+                questionBank={questionBank}
+                finalTestResult={currentSession.finalTestResult}
+                onCompleteTest={(result) => {
+                  updateSession(prev => ({
+                    ...prev,
+                    finalTestResult: result,
+                    status: 'completed',
+                    completedStages: prev.completedStages.includes('final_test')
+                      ? prev.completedStages
+                      : [...prev.completedStages, 'final_test']
+                  }));
+                  handleStageComplete('final_test');
+                }}
+                onAskTutor={handleAskTutor}
+                onPracticeAgain={() => handlePracticeAgain(currentSession)}
+              />
+            )}
+          </div>
+
+          {/* Sticky Persistent Stage Bottom Navigation Bar */}
+          <div className="sticky bottom-4 z-30 mt-6 p-4 rounded-3xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
+              <button
+                onClick={handleGoToPreviousStage}
+                disabled={currentStageIndex <= 0}
+                className="px-4 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Previous: {prevStage?.shortLabel || 'Back'}</span>
+                <span className="sm:hidden">Back</span>
+              </button>
+
+              <button
+                onClick={() => handleStageComplete(currentSession.currentStage)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                  currentSession.completedStages.includes(currentSession.currentStage)
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{currentSession.completedStages.includes(currentSession.currentStage) ? 'Done ✓' : 'Mark Done'}</span>
+              </button>
+            </div>
+
+            <div className="text-center hidden md:block">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Step {currentStageIndex + 1} of {currentSubjectStages.length}
+              </span>
+              <span className="text-xs font-extrabold text-white">
+                {currentStageDef?.label}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              {nextStage ? (
+                <button
+                  onClick={handleAdvanceToNextStage}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-amber-500/25 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <span>Continue to {nextStage.shortLabel}</span>
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setViewMode('fast_track');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/25"
+                >
+                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                  <span>Topic Completed • View All</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating AI Tutor Quick Assistant Button & Drawer (Available anywhere in workspace) */}
       {currentSession.currentStage !== 'tutor' && (
